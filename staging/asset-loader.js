@@ -133,71 +133,6 @@ async function validateClawRezFile() {
 }
 
 /**
- * Detect the best available compression algorithm
- * Priority: zstd (best ratio) → brotli → gzip (universal fallback)
- * Note: As of Chrome 145, only gzip/deflate are supported in CompressionStream API
- * Future browser versions may support zstd/brotli, so we keep them in priority order
- * @returns {Object|null} Algorithm info {name, label, mimeType} or null if none available
- */
-function detectBestCompressionAlgorithm() {
-  const algorithms = [
-    { name: 'zstd', label: 'Zstd', mimeType: 'application/zstd' },
-    { name: 'br', label: 'Brotli', mimeType: 'application/br' },
-    { name: 'gzip', label: 'Gzip', mimeType: 'application/gzip' }
-  ];
-
-  for (const algo of algorithms) {
-    try {
-      // Test if browser supports this algorithm
-      new CompressionStream(algo.name);
-      new DecompressionStream(algo.name);
-      console.log(`✅ Compression algorithm selected: ${algo.label}`);
-      return algo;
-    } catch (e) {
-      console.log(`⚠️  ${algo.label} not supported, trying next...`);
-    }
-  }
-
-  console.warn('⚠️  No compression algorithm available, storing uncompressed');
-  return null;
-}
-
-/**
- * Compress a Blob using specified algorithm
- * @param {Blob} blob - Blob to compress
- * @param {string} algorithm - Algorithm name ('zstd', 'br', 'gzip')
- * @param {string} mimeType - MIME type for compressed blob
- * @param {Function} progressCallback - Progress callback (0.0 to 1.0)
- * @returns {Promise<Blob>} Compressed Blob
- */
-async function compressBlob(blob, algorithm, mimeType, progressCallback) {
-  const readableStream = blob.stream();
-  const compressionStream = new CompressionStream(algorithm);
-  const compressedStream = readableStream.pipeThrough(compressionStream);
-
-  const chunks = [];
-  const reader = compressedStream.getReader();
-  let bytesRead = 0;
-  const totalBytes = blob.size;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    chunks.push(value);
-    bytesRead += value.length;
-
-    if (progressCallback) {
-      progressCallback(Math.min(bytesRead / totalBytes, 0.99));
-    }
-  }
-
-  if (progressCallback) progressCallback(1.0);
-
-  return new Blob(chunks, { type: mimeType });
-}
-
-/**
  * Handle CLAW.REZ file upload with compression
  */
 async function uploadClawRez() {
@@ -238,28 +173,14 @@ async function uploadClawRez() {
   try {
     console.log(`Original file size: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
 
-    // Detect best compression algorithm
-    const algo = detectBestCompressionAlgorithm();
-
-    let blobToStore = file;
-
-    if (algo) {
-      // Compress file with progress tracking
-      blobToStore = await compressBlob(file, algo.name, algo.mimeType, (progress) => {
-        document.getElementById('uploadProgressBar').value = progress * 50;
-        document.getElementById('uploadStatus').textContent =
-          `Compressing (${algo.label}): ${(progress * 100).toFixed(1)}%`;
-      });
-
-      console.log(`Compressed size: ${(blobToStore.size / 1024 / 1024).toFixed(2)}MB`);
-      console.log(`Compression ratio: ${((1 - blobToStore.size / file.size) * 100).toFixed(1)}%`);
-    } else {
-      console.log('Storing uncompressed (no compression support)');
-    }
-
-    // Store compressed file in IndexedDB
-    await assetStorage.storeFile('CLAW.REZ', blobToStore, (loaded, total) => {
-      const percent = 50 + (loaded / total) * 50;
+    // Store CLAW.REZ UNCOMPRESSED. We used to gzip it (~45% smaller: 113MB ->
+    // 62MB), but that meant paying a ~1.8s gzip DECOMPRESSION cost on EVERY
+    // launch to save ~50MB of IndexedDB once. Storage is cheap; the repeated
+    // startup wait is what users feel. Storing raw eliminates the per-launch
+    // decompress entirely. (Existing gzip-compressed copies still decompress
+    // correctly on load via the metadata.compressed path in prepareAssetStorage.)
+    await assetStorage.storeFile('CLAW.REZ', file, (loaded, total) => {
+      const percent = (loaded / total) * 100;
       document.getElementById('uploadProgressBar').value = percent;
       document.getElementById('uploadStatus').textContent =
         `Storing assets: ${percent.toFixed(1)}%`;
@@ -279,31 +200,6 @@ async function uploadClawRez() {
 
   } catch (error) {
     console.error('Upload failed:', error);
-
-    // If compression failed, try fallback to uncompressed
-    if (error.message && error.message.includes('compress')) {
-      console.warn('Compression failed, falling back to uncompressed storage');
-      try {
-        await assetStorage.storeFile('CLAW.REZ', file, (loaded, total) => {
-          const percent = (loaded / total) * 100;
-          document.getElementById('uploadProgressBar').value = percent;
-          document.getElementById('uploadStatus').textContent =
-            `Storing assets (uncompressed): ${percent.toFixed(1)}%`;
-        });
-
-        document.getElementById('uploadStatus').textContent = 'Upload complete! Starting game...';
-        setTimeout(() => {
-          hideAssetUpload();
-          if (uploadResolve) {
-            uploadResolve();
-            uploadResolve = null;
-          }
-        }, 1000);
-        return;
-      } catch (fallbackError) {
-        console.error('Fallback upload also failed:', fallbackError);
-      }
-    }
 
     // IndexedDB is disabled or quota-limited in some browsers' private/
     // incognito modes, which is the most common cause of storage failures.
