@@ -133,7 +133,7 @@ async function validateClawRezFile() {
 }
 
 /**
- * Handle CLAW.REZ file upload with compression
+ * Handle CLAW.REZ file upload (stored uncompressed)
  */
 async function uploadClawRez() {
   const fileInput = document.getElementById('clawRezFile');
@@ -173,12 +173,10 @@ async function uploadClawRez() {
   try {
     console.log(`Original file size: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
 
-    // Store CLAW.REZ UNCOMPRESSED. We used to gzip it (~45% smaller: 113MB ->
-    // 62MB), but that meant paying a ~1.8s gzip DECOMPRESSION cost on EVERY
-    // launch to save ~50MB of IndexedDB once. Storage is cheap; the repeated
-    // startup wait is what users feel. Storing raw eliminates the per-launch
-    // decompress entirely. (Existing gzip-compressed copies still decompress
-    // correctly on load via the metadata.compressed path in prepareAssetStorage.)
+    // Store CLAW.REZ uncompressed. Compressing it (gzip, ~45% smaller) saved
+    // ~50MB of IndexedDB once but cost ~1.8s of decompression on EVERY launch.
+    // Storage is cheap; the repeated startup wait is not. Raw = no per-launch
+    // decompress.
     await assetStorage.storeFile('CLAW.REZ', file, (loaded, total) => {
       const percent = (loaded / total) * 100;
       document.getElementById('uploadProgressBar').value = percent;
@@ -251,29 +249,6 @@ function waitForUpload() {
 
 // Global to store CLAW.REZ data until Emscripten FS is ready
 let clawRezData = null;
-
-/**
- * Decompress a Blob using specified algorithm
- * @param {Blob} compressedBlob - Compressed Blob
- * @param {string} algorithm - Algorithm name ('zstd', 'br', 'gzip')
- * @returns {Promise<Blob>} Decompressed Blob
- */
-async function decompressBlob(compressedBlob, algorithm) {
-  const readableStream = compressedBlob.stream();
-  const decompressionStream = new DecompressionStream(algorithm);
-  const decompressedStream = readableStream.pipeThrough(decompressionStream);
-
-  const chunks = [];
-  const reader = decompressedStream.getReader();
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-  }
-
-  return new Blob(chunks);
-}
 
 /**
  * Prepare CLAW.REZ from IndexedDB (but don't write to FS yet)
@@ -416,47 +391,16 @@ async function prepareAssetStorage() {
       await waitForUpload();
     } else {
       console.log('CLAW.REZ found in storage. Loading...');
-
-      // Get file metadata
       const metadata = await assetStorage.getFileMetadata('CLAW.REZ');
       console.log(`Stored size: ${(metadata.size / 1024 / 1024).toFixed(2)}MB`);
-
-      if (metadata.compressed) {
-        console.log(`Compression: ${metadata.compressionAlgorithm || 'gzip'}`);
-      }
     }
 
-    // Retrieve CLAW.REZ from IndexedDB
+    // Retrieve CLAW.REZ from IndexedDB. It is stored uncompressed, so it can be
+    // used directly with no decompression step.
     console.log('Retrieving CLAW.REZ from IndexedDB...');
-    const storedBlob = await assetStorage.getFile('CLAW.REZ');
-    if (!storedBlob) {
+    const clawRezBlob = await assetStorage.getFile('CLAW.REZ');
+    if (!clawRezBlob) {
       throw new Error('Failed to retrieve CLAW.REZ from storage');
-    }
-
-    // Check if file is compressed
-    const metadata = await assetStorage.getFileMetadata('CLAW.REZ');
-    let clawRezBlob = storedBlob;
-
-    if (metadata.compressed && metadata.compressionAlgorithm) {
-      console.log(`Decompressing CLAW.REZ using ${metadata.compressionAlgorithm}...`);
-      const startTime = performance.now();
-
-      try {
-        clawRezBlob = await decompressBlob(storedBlob, metadata.compressionAlgorithm);
-        const decompressTime = performance.now() - startTime;
-
-        console.log(`Decompressed size: ${(clawRezBlob.size / 1024 / 1024).toFixed(2)}MB`);
-        console.log(`Decompression took: ${decompressTime.toFixed(0)}ms`);
-        console.log(`Compression ratio: ${((1 - storedBlob.size / clawRezBlob.size) * 100).toFixed(1)}%`);
-      } catch (decompressError) {
-        console.error('Decompression failed:', decompressError);
-        showUploadError(
-          `Failed to decompress CLAW.REZ using ${metadata.compressionAlgorithm}.\n\n` +
-          `Error: ${decompressError.message}\n\n` +
-          `Please clear browser storage and re-upload CLAW.REZ.`
-        );
-        return false;
-      }
     }
 
     // CRITICAL: Convert Blob to ArrayBuffer and store BEFORE returning

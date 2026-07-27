@@ -6,7 +6,7 @@ Guidance for Claude Code when working in this repository.
 
 ## Overview
 
-Captain Claw WASM is a browser-based fork of Captain Claw (1997), focused on optimizing the WebAssembly build. The original archive (`CLAW.REZ`, ~113MB) is **not** bundled: the user uploads it once and it's stored compressed in IndexedDB. Startup is fast (~48MB download, 2-3s) because level assets lazy-load on demand.
+Captain Claw WASM is a browser-based fork of Captain Claw (1997), focused on optimizing the WebAssembly build. The original archive (`CLAW.REZ`, ~113MB) is **not** bundled: the user uploads it once and it's stored uncompressed in IndexedDB. Startup is fast (~48MB download, 2-3s) because level assets lazy-load on demand.
 
 ## Prerequisites
 
@@ -71,14 +71,14 @@ Startup loads only menu/UI assets (~150ms). Level assets and level metadata (XML
 
 ### Assets & resources
 
-- First run: no `CLAW.REZ` in IndexedDB → upload UI → compress → store (~62MB). Every load: retrieve → decompress (~200-500ms) → mount to FS. Compression auto-selects zstd → brotli → gzip via native `CompressionStream` (gzip in practice today), falling back to uncompressed on failure.
+- First run: no `CLAW.REZ` in IndexedDB → upload UI → store uncompressed (~113MB). Every load: retrieve → mount to FS (no decompression). Stored raw because gzip cost ~1.8s of decompression on every launch to save ~50MB once.
 - `ASSETS.ZIP` is preloaded with the WASM (<1MB) and **overrides** `CLAW.REZ` files with matching paths.
 - Resource paths are **case-sensitive, forward-slash**: `/STATES/MENU/*`, `/GAME/IMAGES/MENU/*`, `/GAME/FONTS/*`, `/LEVEL1..14/*`.
 - Level metadata XMLs are gzip-compressed inside `ASSETS.ZIP`; `XmlLoader.cpp` decompresses transparently. Edit via `scripts/decompress_metadata.sh` → edit → `scripts/compress_metadata.sh`.
 
 ### C++/JS bridge
 
-C++ calls JS via `EM_ASM` / `EM_ASM_INT` (strings via `UTF8ToString($0)`). Bridge files in `Build_Release/` are ES6 modules copied at build time, imported by `openclaw.html`: `asset-loader.js` / `asset-storage.js` (IndexedDB + compression), `resource-loader.js` (loading coordination), `graphics-bridge.js` / `texture-bridge.js` (WebGL + textures).
+C++ calls JS via `EM_ASM` / `EM_ASM_INT` (strings via `UTF8ToString($0)`). Bridge files in `Build_Release/` are ES6 modules copied at build time, imported by `openclaw.html`: `asset-loader.js` / `asset-storage.js` (IndexedDB asset storage), `resource-loader.js` (loading coordination), `graphics-bridge.js` / `texture-bridge.js` (WebGL + textures).
 
 ## Development Workflow
 
