@@ -374,7 +374,21 @@ async function prepareAssetStorage() {
     await assetStorage.init();
 
     // Check if CLAW.REZ exists in IndexedDB
-    const hasClawRez = await assetStorage.hasFile('CLAW.REZ');
+    let hasClawRez = await assetStorage.hasFile('CLAW.REZ');
+
+    // Purge a legacy gzip-compressed CLAW.REZ. Older versions stored it
+    // compressed (blob type "application/gzip" etc.); this build has no
+    // decompressor, so such a copy is unusable. Delete it so the user isn't
+    // stuck with orphaned storage they can't clear, and treat it as absent
+    // (they'll be prompted to re-upload).
+    if (hasClawRez) {
+      const meta = await assetStorage.getFileMetadata('CLAW.REZ');
+      if (meta && /^application\/(gzip|x-gzip|zstd|br)$/i.test(meta.type || '')) {
+        console.warn('Removing legacy compressed CLAW.REZ (' + meta.type + '); re-upload required.');
+        await assetStorage.deleteFile('CLAW.REZ');
+        hasClawRez = false;
+      }
+    }
 
     if (!hasClawRez) {
       console.log('CLAW.REZ not found in storage.');
