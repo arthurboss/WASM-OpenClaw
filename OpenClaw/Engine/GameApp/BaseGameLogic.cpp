@@ -1065,11 +1065,6 @@ void BaseGameLogic::VChangeState(GameState newState)
         g_pApp->GetResourceCache()->Preload(levelAssetPath, NULL);
         LOG("Level assets loaded for " + levelName);
 
-        // Load this level's actor prototypes now (deferred off startup). Must
-        // happen before VLoadGame() spawns the level's actors, which look them
-        // up via GetActorPrototypeElem().
-        g_pApp->LoadLevelActorPrototypes(levelNumber);
-
         // Load saved level file, e.g. LEVEL1.xml
         if (!VLoadGame(wwdLevelPath.c_str()))
         {

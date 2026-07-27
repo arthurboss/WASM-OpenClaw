@@ -353,11 +353,6 @@ public:
 
   TiXmlElement *GetActorPrototypeElem(ActorPrototype proto);
 
-  // Load the actor prototypes under /ACTOR_PROTOTYPES/LEVEL{N}/ for a level.
-  // Called during level loading (behind the loading screen) so per-level protos
-  // are not parsed eagerly at startup. Idempotent: skips levels already loaded.
-  void LoadLevelActorPrototypes(int levelNumber);
-
   const shared_ptr<LevelMetadata> GetLevelMetadata(int levelNumber) const;
 
   void RegisterTouchRecognizers(ITouchHandler &touchHandler);
@@ -396,11 +391,6 @@ private:
   bool InitializeEventMgr();
   bool ReadConsoleConfig();
   bool ReadActorXmlPrototypes(GameOptions &gameOptions);
-  // Load actor prototypes matching a VMatch glob and merge them into
-  // m_ActorXmlPrototypeMap (additive; does not clear). Used to defer per-level
-  // prototypes off the startup path. Missing-prototype validation is NOT done
-  // here - that only makes sense once every level's protos are loaded.
-  void LoadActorPrototypesFromPattern(const std::string &pattern);
   bool ReadLevelMetadata(GameOptions &gameOptions);
   bool LoadSingleLevelMetadata(int levelNumber);
 

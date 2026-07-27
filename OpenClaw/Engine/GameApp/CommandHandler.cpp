@@ -37,18 +37,6 @@ std::vector<std::string> g_AvailableCheats;
     } \
 }
 
-// Debug reload of actor prototypes drops the whole map and reloads only the
-// shared set. If we're in a level, re-load that level's prototypes too so the
-// running level does not lose its actor definitions.
-static void ReloadCurrentLevelActorPrototypes()
-{
-    BaseGameLogic *pLogic = g_pApp->GetGameLogic();
-    if (pLogic == NULL) return;
-    shared_ptr<LevelData> pLevel = pLogic->GetCurrentLevelData();
-    if (pLevel == NULL) return;
-    g_pApp->LoadLevelActorPrototypes(pLevel->GetLevelNumber());
-}
-
 bool CommandHandler::AddPowerup(PowerupType type, int duration, bool& executed, std::string command, Console* pConsole)
 {
     if (StrongActorPtr pClaw = g_pApp->GetGameLogic()->GetClawActor())
@@ -195,14 +183,12 @@ void CommandHandler::HandleCommand(const char* command, void* userdata)
     else if (commandStr == "reload actorprototypes" || commandStr == "reload actorproto")
     {
         g_pApp->ReadActorXmlPrototypes(g_pApp->m_GameOptions);
-        ReloadCurrentLevelActorPrototypes();
         wasCommandExecuted = true;
     }
     else if (commandStr == "reload all" || commandStr == "ra")
     {
         g_pApp->ReadLevelMetadata(g_pApp->m_GameOptions);
         g_pApp->ReadActorXmlPrototypes(g_pApp->m_GameOptions);
-        ReloadCurrentLevelActorPrototypes();
         wasCommandExecuted = true;
     }
 

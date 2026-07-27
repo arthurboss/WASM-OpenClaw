@@ -1159,13 +1159,16 @@ bool BaseGameApp::InitializeTouchManager(GameOptions &gameOptions) {
 //     Reads XML documents containing various actor prototypes which are then
 //     used to instantiate concrete actors
 //---------------------------------------------------------------------------------------------------------------------
-// Parse every prototype XML matching `pattern` and merge it into
-// m_ActorXmlPrototypeMap. Additive: does NOT clear the map, so it can be called
-// repeatedly (shared set at startup, then per-level). Does not validate that
-// the full prototype enum is covered - that is the caller's concern.
-void BaseGameApp::LoadActorPrototypesFromPattern(const std::string &pattern) {
+bool BaseGameApp::ReadActorXmlPrototypes(GameOptions &gameOptions) {
+
+  // In case of reload
+  if (!m_ActorXmlPrototypeMap.empty()) {
+    LOG_TRACE("Detected reload of actor prototypes !");
+    m_ActorXmlPrototypeMap.clear();
+  }
+
   std::vector<std::string> xmlActorPrototypeFiles =
-      m_pResourceMgr->VMatch(pattern);
+      m_pResourceMgr->VMatch("/ACTOR_PROTOTYPES/*.XML");
 
   for (const std::string &protoFile : xmlActorPrototypeFiles) {
     TiXmlElement *pActorProtoElem =
@@ -1188,70 +1191,6 @@ void BaseGameApp::LoadActorPrototypesFromPattern(const std::string &pattern) {
       auto iter = m_ActorXmlPrototypeMap.insert(
           std::make_pair(actorProto, pActorProtoElemDuplicate));
       if (!iter.second) {
-        // Already loaded (e.g. a level re-entered, or a shared proto). Not an
-        // error for per-level loads; keep the first definition.
-        LOG_TRACE("Actor prototype " + EnumToString_ActorPrototype(actorProto) +
-                  " already loaded; skipping " + protoFile);
-      }
-    }
-  }
-}
-
-// Load the actor prototypes stored under /ACTOR_PROTOTYPES/LEVEL{N}/. Called
-// during level loading (behind the loading screen) so these are kept off the
-// startup path. The pattern is level-exact: because WildcardMatch treats '*'
-// greedily across '/', "/ACTOR_PROTOTYPES/LEVEL1/*.XML" matches LEVEL1 only and
-// never LEVEL10+ (the trailing '/' fails against the '0'). Idempotent: protos
-// already in the map are skipped by LoadActorPrototypesFromPattern.
-void BaseGameApp::LoadLevelActorPrototypes(int levelNumber) {
-  const std::string pattern =
-      "/ACTOR_PROTOTYPES/LEVEL" + ToStr(levelNumber) + "/*.XML";
-  LOG("Loading actor prototypes for LEVEL" + ToStr(levelNumber) + "...");
-  LoadActorPrototypesFromPattern(pattern);
-}
-
-bool BaseGameApp::ReadActorXmlPrototypes(GameOptions &gameOptions) {
-
-  // In case of reload
-  if (!m_ActorXmlPrototypeMap.empty()) {
-    LOG_TRACE("Detected reload of actor prototypes !");
-    m_ActorXmlPrototypeMap.clear();
-  }
-
-  // Only load SHARED prototypes at startup. Per-level prototypes under
-  // /ACTOR_PROTOTYPES/LEVEL{N}/ are deferred to level-load (see
-  // LoadLevelActorPrototypes) to keep startup fast. WildcardMatch is greedy
-  // across '/', so "/ACTOR_PROTOTYPES/*.XML" also matches the LEVEL{N}/ files;
-  // filter those out here.
-  std::vector<std::string> allFiles =
-      m_pResourceMgr->VMatch("/ACTOR_PROTOTYPES/*.XML");
-
-  std::vector<std::string> sharedFiles;
-  for (const std::string &f : allFiles) {
-    if (f.find("/ACTOR_PROTOTYPES/LEVEL") == std::string::npos) {
-      sharedFiles.push_back(f);
-    }
-  }
-
-  for (const std::string &protoFile : sharedFiles) {
-    TiXmlElement *pActorProtoElem =
-        XmlResourceLoader::LoadAndReturnRootXmlElement(protoFile.c_str());
-    std::string protoName;
-    if (!ParseAttributeFromXmlElem(&protoName, "ActorPrototypeName",
-                                   pActorProtoElem)) {
-      LOG_ERROR(protoFile +
-                " is missing ActorPrototypeName attribute in its root node !");
-    } else {
-      ActorPrototype actorProto = StringToEnum_ActorPrototype(protoName);
-
-      TiXmlNode *pDuplicateNode = pActorProtoElem->Clone();
-      assert(pDuplicateNode);
-      TiXmlElement *pActorProtoElemDuplicate = pDuplicateNode->ToElement();
-      assert(pActorProtoElemDuplicate);
-
-      auto iter = m_ActorXmlPrototypeMap.insert(
-          std::make_pair(actorProto, pActorProtoElemDuplicate));
-      if (!iter.second) {
         LOG_WARNING("Multi " + EnumToString_ActorPrototype(actorProto) +
                     " actor prototype definitions! Fix ASSETS!");
         std::string typeName;
@@ -1262,10 +1201,28 @@ bool BaseGameApp::ReadActorXmlPrototypes(GameOptions &gameOptions) {
     }
   }
 
-  LOG("Shared actor prototypes loaded (" + ToStr((int)sharedFiles.size()) +
-      " files). Per-level prototypes load on level entry.");
+  bool loadedAllRequired = true;
 
-  return true;
+  // When I provide specific purpose API, I should be very dilligent
+  for (int actorPrototypeIdx = ActorPrototype_Start + 1;
+       actorPrototypeIdx < ActorPrototype_Max; actorPrototypeIdx++) {
+    auto findIt =
+        m_ActorXmlPrototypeMap.find(ActorPrototype(actorPrototypeIdx));
+    if (findIt == m_ActorXmlPrototypeMap.end()) {
+      LOG_ERROR("Actor prototype: \"" +
+                EnumToString_ActorPrototype(ActorPrototype(actorPrototypeIdx)) +
+                std::string("\" was not found !"));
+      loadedAllRequired = false;
+    }
+  }
+
+  if (loadedAllRequired) {
+    LOG("Actor prototypes loaded successfully.");
+  } else {
+    LOG_ERROR("Some of the actor prototypes were not loaded.");
+  }
+
+  return loadedAllRequired;
 }
 
 bool BaseGameApp::ReadLevelMetadata(GameOptions &gameOptions) {
