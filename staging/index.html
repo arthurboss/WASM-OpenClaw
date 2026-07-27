@@ -1295,17 +1295,19 @@
         setStatus: function (text) {
           if (loadingElement) {
             Module.canvas.style.display = "none";
-            var progress =
-              ((Module.dataFileDownloads["openclaw.data"].loaded /
-                Module.dataFileDownloads["openclaw.data"].total) *
-                100) |
-              0;
-            if (progress < 100) {
+            // "Loading", not "downloading": assets come from local storage
+            // (IndexedDB / the embedded data package), not the network. total
+            // is 0 until the data package reports progress, so guard the divide
+            // to avoid showing "NaN%".
+            var dl = Module.dataFileDownloads["openclaw.data"];
+            if (dl && dl.total > 0) {
+              var progress = ((dl.loaded / dl.total) * 100) | 0;
               loadingElement.innerHTML =
-                "Game resources are downloading... " + (progress | 0) + "%";
+                progress < 100
+                  ? "Loading game resources... " + progress + "%"
+                  : "Game resources loaded. Starting...";
             } else {
-              loadingElement.innerHTML =
-                "Game resources have been downloaded. Game is loading...";
+              loadingElement.innerHTML = "Loading game resources...";
             }
           }
         },
