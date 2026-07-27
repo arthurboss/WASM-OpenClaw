@@ -6,7 +6,7 @@ Guidance for Claude Code when working in this repository.
 
 ## Overview
 
-Captain Claw WASM is a browser-based fork of Captain Claw (1997), focused on optimizing the WebAssembly build. The original archive (`CLAW.REZ`, ~113MB) is **not** bundled: the user uploads it once and it's stored uncompressed in IndexedDB. Startup is fast (~48MB download, 2-3s) because level assets lazy-load on demand.
+Captain Claw WASM is a browser-based fork of Captain Claw (1997), focused on optimizing the WebAssembly build. The original archive (`CLAW.REZ`, ~113MB) is **not** bundled: the user uploads it once and it's stored in IndexedDB. Startup is fast (~48MB download, 2-3s) because level assets lazy-load on demand.
 
 ## Prerequisites
 
@@ -71,7 +71,7 @@ Startup loads only menu/UI assets (~150ms). Level assets and level metadata (XML
 
 ### Assets & resources
 
-- First run: no `CLAW.REZ` in IndexedDB → upload UI → store uncompressed (~113MB). Every load: retrieve → mount to FS (no decompression). Stored raw because gzip cost ~1.8s of decompression on every launch to save ~50MB once.
+- First run: no `CLAW.REZ` in IndexedDB → upload UI → store (~113MB). Every load: retrieve → mount to FS.
 - `ASSETS.ZIP` is preloaded with the WASM (<1MB) and **overrides** `CLAW.REZ` files with matching paths.
 - Resource paths are **case-sensitive, forward-slash**: `/STATES/MENU/*`, `/GAME/IMAGES/MENU/*`, `/GAME/FONTS/*`, `/LEVEL1..14/*`.
 - Level metadata XMLs are gzip-compressed inside `ASSETS.ZIP`; `XmlLoader.cpp` decompresses transparently. Edit via `scripts/decompress_metadata.sh` → edit → `scripts/compress_metadata.sh`.

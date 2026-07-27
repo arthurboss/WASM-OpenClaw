@@ -82,7 +82,7 @@ If the game loads but you want to re-upload:
 - Browser storage quota too low
 - Too many cached websites using storage
 
-**Note:** CLAW.REZ is stored uncompressed and requires ~113MB of IndexedDB storage.
+**Note:** CLAW.REZ requires ~113MB of IndexedDB storage.
 
 **Solutions:**
 

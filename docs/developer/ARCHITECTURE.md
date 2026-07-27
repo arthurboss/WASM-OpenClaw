@@ -45,21 +45,11 @@ The game uses a single archive file (CLAW.REZ) similar to a ZIP file:
 
 ### CLAW.REZ Storage in IndexedDB
 
-CLAW.REZ is stored **uncompressed** in IndexedDB (one-time upload, ~113MB).
+CLAW.REZ (~113MB) is uploaded once and kept in IndexedDB, then mounted into the
+Emscripten filesystem on each load.
 
-Earlier versions gzip-compressed it (~62MB, 45% smaller), but that traded a
-one-time ~50MB storage saving for a ~1.8s gzip **decompression cost on every
-launch** (measured under CPU throttle). Storage is cheap; the repeated startup
-wait is what users feel. So we store the raw file: no compression on upload, no
-decompression on load.
-
-**Implementation:**
-
-- `asset-loader.js` - stores the uploaded file as-is; loads it directly from IndexedDB
-- `asset-storage.js` - stores the blob + metadata (name, size, type, timestamp, optional version tag)
-
-**Trade-off:** ~113MB of IndexedDB per install instead of ~62MB. Well within
-browser storage quotas on desktop and mobile.
+- `asset-loader.js` - handles the upload and loads the file from IndexedDB
+- `asset-storage.js` - the IndexedDB wrapper (blob + metadata, optional version tag)
 
 ### Custom Assets
 
@@ -307,8 +297,7 @@ Uses `ReadLevelMetadata()` to reload entire map.
 
 Potential improvements for even better performance:
 
-- [x] Compress metadata XMLs with gzip (✓ Implemented - 79% size reduction; this is the C++/`ASSETS.ZIP` metadata, unrelated to CLAW.REZ storage)
-- [x] Store CLAW.REZ uncompressed (✓ removes the ~1.8s per-launch gzip decompression; biggest measured startup win)
+- [x] Compress metadata XMLs with gzip (✓ Implemented - 79% size reduction)
 - [ ] Preload next level's metadata while playing current level
 - [ ] Implement progressive asset loading (low-res → high-res)
 - [x] Add service worker for offline play (✓ Implemented - `sw.js` caches shell assets; bump `CACHE_VERSION` in `sw.js` whenever a file in `SHELL_ASSETS` changes)
