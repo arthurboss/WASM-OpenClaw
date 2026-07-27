@@ -547,7 +547,14 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        padding: clamp(12px, 3vmin, 24px);
+        /* Add the safe-area insets to the base padding so the card never sits
+           under the notch/Dynamic Island in an installed PWA (standalone mode
+           has no browser chrome, so the top inset is otherwise ignored). */
+        padding:
+          calc(clamp(12px, 3vmin, 24px) + env(safe-area-inset-top, 0px))
+          calc(clamp(12px, 3vmin, 24px) + env(safe-area-inset-right, 0px))
+          calc(clamp(12px, 3vmin, 24px) + env(safe-area-inset-bottom, 0px))
+          calc(clamp(12px, 3vmin, 24px) + env(safe-area-inset-left, 0px));
         background: radial-gradient(circle at 50% 30%, #1a2230 0%, #0a0d12 70%);
         color: #fff;
         text-align: center;
@@ -810,6 +817,21 @@
         </div>
       </div>
     </section>
+
+    <!-- Offline mode: shown when network is unavailable and CLAW.REZ hasn't
+         been cached yet. Tells the user to play online first to cache the file. -->
+    <section id="offlineNeedCache" class="onboard">
+      <div class="onboard-card">
+        <div class="onboard-emoji">🌐</div>
+        <h2>Connect to internet first</h2>
+        <p>Your device is offline and the game hasn't been cached yet.</p>
+        <p>Please connect to the internet and upload <strong>CLAW.REZ</strong> to enable offline play.</p>
+        <div class="onboard-actions">
+          <button class="btn btn-primary" id="offlineReloadBtn" onclick="location.reload()">Reload</button>
+        </div>
+      </div>
+    </section>
+
     <div class="debug_panel" style="display: none">
       <div class="cheats">
         <div>
@@ -1223,6 +1245,12 @@
         postRun: [
           function () {
             if (window.markGameRunning) window.markGameRunning();
+            // Now that the game is rendering, cache the WASM/data binaries to
+            // IndexedDB in the background for offline play. Deferred to postRun
+            // so the ~52MB of writes never block the first launch.
+            if (window.cacheGameBinariesInBackground) {
+              setTimeout(function () { window.cacheGameBinariesInBackground(); }, 0);
+            }
             // Disable Emscripten's automatic canvas resizing
             if (typeof Browser !== 'undefined') {
               Browser.resizeCanvas = false;
@@ -1267,17 +1295,19 @@
         setStatus: function (text) {
           if (loadingElement) {
             Module.canvas.style.display = "none";
-            var progress =
-              ((Module.dataFileDownloads["openclaw.data"].loaded /
-                Module.dataFileDownloads["openclaw.data"].total) *
-                100) |
-              0;
-            if (progress < 100) {
+            // "Loading", not "downloading": assets come from local storage
+            // (IndexedDB / the embedded data package), not the network. total
+            // is 0 until the data package reports progress, so guard the divide
+            // to avoid showing "NaN%".
+            var dl = Module.dataFileDownloads["openclaw.data"];
+            if (dl && dl.total > 0) {
+              var progress = ((dl.loaded / dl.total) * 100) | 0;
               loadingElement.innerHTML =
-                "Game resources are downloading... " + (progress | 0) + "%";
+                progress < 100
+                  ? "Loading game resources... " + progress + "%"
+                  : "Game resources loaded. Starting...";
             } else {
-              loadingElement.innerHTML =
-                "Game resources have been downloaded. Game is loading...";
+              loadingElement.innerHTML = "Loading game resources...";
             }
           }
         },

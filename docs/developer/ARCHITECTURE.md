@@ -43,40 +43,13 @@ The game uses a single archive file (CLAW.REZ) similar to a ZIP file:
 - Path-based organization (`/LEVEL1/*`, `/LEVEL2/*`, etc.)
 - Stored in browser's IndexedDB (one-time upload)
 
-### CLAW.REZ Compression in IndexedDB
+### CLAW.REZ Storage in IndexedDB
 
-To optimize storage usage, CLAW.REZ is compressed before storing in IndexedDB:
+CLAW.REZ (~113MB) is uploaded once and kept in IndexedDB, then mounted into the
+Emscripten filesystem on each load.
 
-**Compression Strategy:**
-
-- Automatic algorithm detection: zstd → brotli → gzip (priority order)
-- Uses browser-native `CompressionStream` API
-- Currently falls back to gzip (as of Chrome 145, zstd/brotli not yet supported by the `CompressionStream` API)
-- Compression happens during initial upload (one-time)
-- Decompression happens on game load (every session)
-
-**Storage Savings:**
-
-- Original size: ~113MB
-- Compressed size (gzip): ~62MB (45% reduction)
-- Future: zstd could achieve 60-70% reduction when browser support arrives
-
-**Performance Impact:**
-
-- Upload: +2-5 seconds compression time (one-time setup)
-- Load: +200-500ms decompression time (every session, ~10-20% startup increase)
-- Runtime: No impact (decompression completes before game starts)
-
-**Implementation:**
-
-- `asset-loader.js` - Multi-algorithm compression/decompression with automatic detection
-- `asset-storage.js` - Stores compression algorithm metadata
-- Future-proof: Will automatically use zstd/brotli when browsers add support
-- Automatic fallback to uncompressed if compression/decompression fails
-
-**Browser Compatibility:**
-
-- Chrome 80+, Firefox 113+, Safari 16.4+, Edge 80+ (gzip supported on all)
+- `asset-loader.js` - handles the upload and loads the file from IndexedDB
+- `asset-storage.js` - the IndexedDB wrapper (blob + metadata, optional version tag)
 
 ### Custom Assets
 
@@ -328,7 +301,7 @@ Potential improvements for even better performance:
 - [ ] Preload next level's metadata while playing current level
 - [ ] Implement progressive asset loading (low-res → high-res)
 - [x] Add service worker for offline play (✓ Implemented - `sw.js` caches shell assets; bump `CACHE_VERSION` in `sw.js` whenever a file in `SHELL_ASSETS` changes)
-- [ ] Use WebAssembly SIMD for faster resource decompression
+- [ ] Tier the `CUSTOM_RESOURCE` wildcard preload (startup vs level-load vs on-demand) — ~400ms at startup
 
 ## References
 

@@ -74,7 +74,6 @@ If the game loads but you want to re-upload:
 2. Check file size is approximately 113 MB
 3. Clear browser storage (see above)
 4. Try a different browser
-5. If compression fails, the system will automatically fall back to uncompressed storage
 
 ### "Out of storage" Error
 
@@ -83,7 +82,7 @@ If the game loads but you want to re-upload:
 - Browser storage quota too low
 - Too many cached websites using storage
 
-**Note:** With compression enabled, CLAW.REZ only requires ~45-70MB of storage instead of 113MB.
+**Note:** CLAW.REZ requires ~113MB of IndexedDB storage.
 
 **Solutions:**
 
@@ -113,51 +112,18 @@ If the game loads but you want to re-upload:
 3. Disable browser extensions temporarily
 4. Clear IndexedDB and try again (see above)
 
-### "CLAW.REZ decompression failed" Error
-
-**Causes:**
-
-- Corrupted compressed data in IndexedDB
-- Browser interrupted during compression/upload
-- Browser doesn't support DecompressionStream API (rare)
-
-**Solutions:**
-
-1. Clear IndexedDB storage (see Method 1 above)
-2. Re-upload CLAW.REZ - it will compress again
-3. Check browser console for detailed error messages
-4. System will automatically try to use file as uncompressed if decompression fails
-
-### "Compression failed during upload" Warning
-
-**Causes:**
-
-- Browser interrupted compression
-- Insufficient memory during compression
-- Browser API compatibility issue
-
-**Solutions:**
-
-1. System will automatically fall back to uncompressed storage (uses 113MB instead of 45-70MB)
-2. Game will work normally, just uses more storage space
-3. If you want compression, clear IndexedDB and try uploading again
-4. Close other browser tabs to free up memory
-
 ### Game Loads Slowly
 
 **Causes:**
 
 - Large CLAW.REZ file loading from IndexedDB
-- Decompression taking longer than expected (~200-500ms is normal)
 - Slow system/browser
 - Many browser tabs open
 
 **Solutions:**
 
-1. First load with decompression adds ~200-500ms (normal, barely noticeable)
-2. Subsequent loads should still be <3 seconds total
-3. Close unnecessary browser tabs to free up memory
-4. Check browser console to see decompression timing
+1. Close unnecessary browser tabs to free up memory
+2. Subsequent loads should be a few seconds total
 
 ### Assets Won't Load
 
