@@ -7,7 +7,7 @@
 // share the origin's Cache Storage, and a version bump in one environment
 // would run activate -> caches.keys() -> delete the OTHER environment's cache.
 // registration.scope is the source of truth; fall back to the SW's own path.
-const CACHE_VERSION = "v6";
+const CACHE_VERSION = "v13";
 const SCOPE_PATH = (function () {
   try {
     return new URL(self.registration.scope).pathname;
@@ -20,6 +20,17 @@ const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
 // Essential assets needed to boot the game
 // These are served by Vite and have stable, hashed filenames in production
+//
+// NOTE: openclaw.wasm / openclaw.data are deliberately NOT cached here.
+// Safari refuses to compile a Service-Worker-served response with
+// WebAssembly.instantiateStreaming ("wasm streaming compile failed: Load
+// failed") and then blocks the ArrayBuffer fallback fetch as an access-control
+// violation. Those binaries are cached in IndexedDB and fed to Emscripten
+// directly via Module.wasmBinary / Module.getPreloadedPackage instead (see
+// asset-loader.js). They stay in HANDS_OFF below so the SW never touches them.
+//
+// Music assets (JS + soundfont) ARE safe to cache here — the Safari limitation
+// is specific to WASM streaming compilation, not ordinary script/binary fetches.
 const SHELL_ASSETS = [
   "./claw-web.html",
   "./game-init.js",
@@ -41,6 +52,9 @@ const SHELL_ASSETS = [
   "./favicon-16x16.png",
   "./favicon-32x32.png",
   "./preview.png",
+  "./music/midi-player.js",
+  "./music/spessasynth_processor.min.js",
+  "./music/soundfont.sf3",
 ];
 
 // On install: cache the app shell
@@ -106,9 +120,10 @@ self.addEventListener("fetch", (event) => {
   // returning a 200 for a Range request breaks playback and wasm streaming).
   if (req.headers.has("range")) return;
 
-  // Large binaries are loaded/streamed directly and have their own IndexedDB
-  // cache — the SW must not touch them at all (letting a failed inner fetch
-  // surface as a FetchEvent error would abort the game load).
+  // Large binaries are loaded/streamed directly and must never be intercepted:
+  // - .wasm/.data: cached in IndexedDB and fed to Emscripten directly (Safari
+  //   cannot instantiateStreaming a SW-served WASM response — see SHELL_ASSETS).
+  // - .zip/.mp4: streamed with Range requests, which a SW 200 would break.
   const HANDS_OFF = [".wasm", ".data", ".zip", ".mp4"];
   const path = url.pathname.toLowerCase();
   if (HANDS_OFF.some((ext) => path.endsWith(ext)) || path.includes("assets.zip")) {

@@ -118,32 +118,23 @@ export class AssetStorage {
    * @param {Function} onProgress - Progress callback (loaded, total)
    * @returns {Promise<void>}
    */
-  async storeFile(name, blob, onProgress = null) {
+  async storeFile(name, blob, onProgress = null, extraMeta = null) {
     if (!this.db) {
       throw new Error('Database not initialized. Call init() first.');
     }
 
-    // Detect compression algorithm from MIME type
-    const compressionMap = {
-      'application/zstd': 'zstd',
-      'application/br': 'br',
-      'application/gzip': 'gzip',
-      'application/x-gzip': 'gzip'
-    };
-
-    const isCompressed = compressionMap.hasOwnProperty(blob.type);
-    const compressionAlgorithm = compressionMap[blob.type] || null;
-
-    // Store metadata and blob
-    const fileData = {
-      name: name,
-      blob: blob,
-      size: blob.size,
-      type: blob.type,
-      timestamp: Date.now(),
-      compressed: isCompressed,
-      compressionAlgorithm: compressionAlgorithm
-    };
+    // Store metadata and blob. extraMeta lets callers persist extra fields
+    // (e.g. a `version` tag used to detect a stale cached game binary).
+    const fileData = Object.assign(
+      {
+        name: name,
+        blob: blob,
+        size: blob.size,
+        type: blob.type,
+        timestamp: Date.now()
+      },
+      extraMeta || {}
+    );
 
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction([this.storeName], 'readwrite');
@@ -258,8 +249,7 @@ export class AssetStorage {
             size: result.size,
             type: result.type,
             timestamp: result.timestamp,
-            compressed: result.compressed || false,
-            compressionAlgorithm: result.compressionAlgorithm || null
+            version: result.version || null
           });
         } else {
           resolve(null);

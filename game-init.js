@@ -10,7 +10,8 @@ import {
   reuploadClawRez,
   getStorageStats,
   prepareAssetStorage,
-  mountClawRezToFS
+  mountClawRezToFS,
+  cacheGameBinariesInBackground
 } from './asset-loader.js';
 import { initResourceLoader, getLoadingState, updateLoadingUI } from './resource-loader.js';
 import { WebGLBridge } from './graphics-bridge.js';
@@ -26,6 +27,7 @@ window.getStorageStats = getStorageStats;
 // Expose functions needed by inline scripts
 window.prepareAssetStorage = prepareAssetStorage;
 window.mountClawRezToFS = mountClawRezToFS;
+window.cacheGameBinariesInBackground = cacheGameBinariesInBackground;
 window.getLoadingState = getLoadingState;
 window.updateLoadingUI = updateLoadingUI;
 
@@ -70,6 +72,10 @@ function waitForStartClick() {
     overlay.style.display = 'flex';
     window._startOverlayClick = function() {
       prewarmAudioContext();
+      // Warm the level-music synth now (AudioWorklet + 8.4MB soundfont) so it's
+      // ready before the first level, instead of loading lazily after a level
+      // starts. Fire-and-forget: never block the game start on it.
+      if (typeof window.warmLevelMidi === 'function') window.warmLevelMidi();
       overlay.style.display = 'none';
       markStarted();
       window._startOverlayClick = null;

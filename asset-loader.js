@@ -9,6 +9,16 @@ let assetStorage = null;
 let uploadResolve = null;
 
 /**
+ * Show offline (no cache) message
+ */
+function showOfflineNeedCache() {
+  const offlineDiv = document.getElementById('offlineNeedCache');
+  if (offlineDiv) {
+    offlineDiv.classList.add('visible');
+  }
+}
+
+/**
  * Show asset upload UI
  */
 function showAssetUpload() {
@@ -123,85 +133,20 @@ async function validateClawRezFile() {
 }
 
 /**
- * Detect the best available compression algorithm
- * Priority: zstd (best ratio) → brotli → gzip (universal fallback)
- * Note: As of Chrome 145, only gzip/deflate are supported in CompressionStream API
- * Future browser versions may support zstd/brotli, so we keep them in priority order
- * @returns {Object|null} Algorithm info {name, label, mimeType} or null if none available
- */
-function detectBestCompressionAlgorithm() {
-  const algorithms = [
-    { name: 'zstd', label: 'Zstd', mimeType: 'application/zstd' },
-    { name: 'br', label: 'Brotli', mimeType: 'application/br' },
-    { name: 'gzip', label: 'Gzip', mimeType: 'application/gzip' }
-  ];
-
-  for (const algo of algorithms) {
-    try {
-      // Test if browser supports this algorithm
-      new CompressionStream(algo.name);
-      new DecompressionStream(algo.name);
-      console.log(`✅ Compression algorithm selected: ${algo.label}`);
-      return algo;
-    } catch (e) {
-      console.log(`⚠️  ${algo.label} not supported, trying next...`);
-    }
-  }
-
-  console.warn('⚠️  No compression algorithm available, storing uncompressed');
-  return null;
-}
-
-/**
- * Compress a Blob using specified algorithm
- * @param {Blob} blob - Blob to compress
- * @param {string} algorithm - Algorithm name ('zstd', 'br', 'gzip')
- * @param {string} mimeType - MIME type for compressed blob
- * @param {Function} progressCallback - Progress callback (0.0 to 1.0)
- * @returns {Promise<Blob>} Compressed Blob
- */
-async function compressBlob(blob, algorithm, mimeType, progressCallback) {
-  const readableStream = blob.stream();
-  const compressionStream = new CompressionStream(algorithm);
-  const compressedStream = readableStream.pipeThrough(compressionStream);
-
-  const chunks = [];
-  const reader = compressedStream.getReader();
-  let bytesRead = 0;
-  const totalBytes = blob.size;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    chunks.push(value);
-    bytesRead += value.length;
-
-    if (progressCallback) {
-      progressCallback(Math.min(bytesRead / totalBytes, 0.99));
-    }
-  }
-
-  if (progressCallback) progressCallback(1.0);
-
-  return new Blob(chunks, { type: mimeType });
-}
-
-/**
- * Handle CLAW.REZ file upload with compression
+ * Handle CLAW.REZ file upload (stored uncompressed)
  */
 async function uploadClawRez() {
   const fileInput = document.getElementById('clawRezFile');
   const file = fileInput.files[0];
 
   if (!file) {
-    alert('Please select a file first');
+    showUploadError('Please select a file first');
     return;
   }
 
   // Revalidate before upload (in case button was enabled programmatically)
   if (!file.name.match(/^CLAW\.REZ$/i)) {
-    alert('Error: File must be named CLAW.REZ');
+    showUploadError('Error: File must be named CLAW.REZ');
     return;
   }
 
@@ -228,28 +173,12 @@ async function uploadClawRez() {
   try {
     console.log(`Original file size: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
 
-    // Detect best compression algorithm
-    const algo = detectBestCompressionAlgorithm();
-
-    let blobToStore = file;
-
-    if (algo) {
-      // Compress file with progress tracking
-      blobToStore = await compressBlob(file, algo.name, algo.mimeType, (progress) => {
-        document.getElementById('uploadProgressBar').value = progress * 50;
-        document.getElementById('uploadStatus').textContent =
-          `Compressing (${algo.label}): ${(progress * 100).toFixed(1)}%`;
-      });
-
-      console.log(`Compressed size: ${(blobToStore.size / 1024 / 1024).toFixed(2)}MB`);
-      console.log(`Compression ratio: ${((1 - blobToStore.size / file.size) * 100).toFixed(1)}%`);
-    } else {
-      console.log('Storing uncompressed (no compression support)');
-    }
-
-    // Store compressed file in IndexedDB
-    await assetStorage.storeFile('CLAW.REZ', blobToStore, (loaded, total) => {
-      const percent = 50 + (loaded / total) * 50;
+    // Store CLAW.REZ uncompressed. Compressing it (gzip, ~45% smaller) saved
+    // ~50MB of IndexedDB once but cost ~1.8s of decompression on EVERY launch.
+    // Storage is cheap; the repeated startup wait is not. Raw = no per-launch
+    // decompress.
+    await assetStorage.storeFile('CLAW.REZ', file, (loaded, total) => {
+      const percent = (loaded / total) * 100;
       document.getElementById('uploadProgressBar').value = percent;
       document.getElementById('uploadStatus').textContent =
         `Storing assets: ${percent.toFixed(1)}%`;
@@ -269,31 +198,6 @@ async function uploadClawRez() {
 
   } catch (error) {
     console.error('Upload failed:', error);
-
-    // If compression failed, try fallback to uncompressed
-    if (error.message && error.message.includes('compress')) {
-      console.warn('Compression failed, falling back to uncompressed storage');
-      try {
-        await assetStorage.storeFile('CLAW.REZ', file, (loaded, total) => {
-          const percent = (loaded / total) * 100;
-          document.getElementById('uploadProgressBar').value = percent;
-          document.getElementById('uploadStatus').textContent =
-            `Storing assets (uncompressed): ${percent.toFixed(1)}%`;
-        });
-
-        document.getElementById('uploadStatus').textContent = 'Upload complete! Starting game...';
-        setTimeout(() => {
-          hideAssetUpload();
-          if (uploadResolve) {
-            uploadResolve();
-            uploadResolve = null;
-          }
-        }, 1000);
-        return;
-      } catch (fallbackError) {
-        console.error('Fallback upload also failed:', fallbackError);
-      }
-    }
 
     // IndexedDB is disabled or quota-limited in some browsers' private/
     // incognito modes, which is the most common cause of storage failures.
@@ -329,7 +233,7 @@ async function reuploadClawRez() {
       window.location.reload();
     } catch (error) {
       console.error('Failed to delete CLAW.REZ:', error);
-      alert(`Failed to delete file: ${error.message}`);
+      showUploadError(`Failed to delete file: ${error.message}`);
     }
   }
 }
@@ -347,31 +251,122 @@ function waitForUpload() {
 let clawRezData = null;
 
 /**
- * Decompress a Blob using specified algorithm
- * @param {Blob} compressedBlob - Compressed Blob
- * @param {string} algorithm - Algorithm name ('zstd', 'br', 'gzip')
- * @returns {Promise<Blob>} Decompressed Blob
- */
-async function decompressBlob(compressedBlob, algorithm) {
-  const readableStream = compressedBlob.stream();
-  const decompressionStream = new DecompressionStream(algorithm);
-  const decompressedStream = readableStream.pipeThrough(decompressionStream);
-
-  const chunks = [];
-  const reader = decompressedStream.getReader();
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-  }
-
-  return new Blob(chunks);
-}
-
-/**
  * Prepare CLAW.REZ from IndexedDB (but don't write to FS yet)
  */
+// Emscripten binaries needed for OFFLINE boots. Online, the runtime streams
+// these straight from the network (fast, low memory, exactly like a normal
+// Emscripten load). We only intercept when we must serve them from IndexedDB
+// because there is no network — because Safari cannot instantiateStreaming a
+// Service-Worker-served WASM response, so the SW leaves them hands-off and we
+// own their offline availability here.
+const GAME_BINARIES = [
+  { name: 'openclaw.wasm' },
+  { name: 'openclaw.data' },
+];
+
+// Feed cached binary bytes to Emscripten so it never hits the network. Only
+// used when the binaries are already in IndexedDB (the offline path). Setting
+// Module.wasmBinary forces the slower non-streaming compile and holds the whole
+// wasm in memory, so we deliberately do NOT do this online.
+async function feedBinariesFromCache() {
+  const wasmBlob = await assetStorage.getFile('openclaw.wasm');
+  const dataBlob = await assetStorage.getFile('openclaw.data');
+  if (!wasmBlob || !dataBlob) return false;
+
+  const M = window.Module;
+  if (!M) return false;
+
+  M.wasmBinary = new Uint8Array(await wasmBlob.arrayBuffer());
+  const dataBuffer = await dataBlob.arrayBuffer();
+  M.getPreloadedPackage = function (name) {
+    // Emscripten asks for the .data package by its remote name; return our
+    // cached ArrayBuffer for it and let anything else fall through to fetch.
+    if (name && name.includes('openclaw.data')) return dataBuffer;
+    return null;
+  };
+  console.log('[binaries] Serving openclaw.wasm/.data from IndexedDB (offline).');
+  return true;
+}
+
+// Decide how the game binaries are provided for THIS boot.
+// - Online  -> always let Emscripten stream them from the network (fast,
+//   low-memory, streaming compile). Never touch the cache: reading 47MB from
+//   IndexedDB + non-streaming compile is strictly slower. Binaries are cached
+//   in the background after boot for future offline use.
+// - Offline, cached -> feed the bytes from IndexedDB (works on Safari).
+// - Offline, not cached -> cannot boot; caller shows the offline screen.
+// Returns true if the game can proceed to boot.
+async function prepareGameBinaries() {
+  if (!assetStorage) return false;
+
+  if (navigator.onLine) {
+    console.log('[binaries] Online; streaming from network this run.');
+    return true;
+  }
+
+  // Offline: must serve from IndexedDB, if we cached them on a prior run.
+  const ok = await feedBinariesFromCache();
+  if (!ok) console.warn('[binaries] Offline and openclaw.wasm/.data not cached.');
+  return ok;
+}
+
+// Version tag for a game binary as served right now. Uses the ETag (falling
+// back to Last-Modified) from a cheap HEAD request. A new deploy changes these,
+// which is how we detect that a cached binary is stale. Returns null if the
+// server sends neither header (then we cannot tell, and keep what we have).
+async function fetchBinaryVersion(name) {
+  const resp = await fetch(name, { method: 'HEAD', credentials: 'same-origin' });
+  if (!resp.ok) return null;
+  return resp.headers.get('etag') || resp.headers.get('last-modified') || null;
+}
+
+// Fetch openclaw.wasm/.data and store them in IndexedDB WITHOUT blocking boot.
+// Runs after the game is already rendering (postRun), so the ~52MB of writes
+// never delay the first launch. Only runs online.
+//
+// Re-fetches (and overwrites) a binary when the server's version tag differs
+// from the cached one, so a new deploy invalidates the old cached copy. The
+// IndexedDB store is keyed by filename, so the overwrite releases the previous
+// bytes - we never accumulate multiple versions. A binary cached before this
+// versioning existed has no stored tag, so it always mismatches and is refreshed
+// on the next online launch (no manual cache clearing needed).
+async function cacheGameBinariesInBackground() {
+  try {
+    if (!assetStorage || !navigator.onLine) return;
+    for (const bin of GAME_BINARIES) {
+      const has = await assetStorage.hasFile(bin.name);
+
+      // What version is live on the server right now?
+      let serverVersion = null;
+      try {
+        serverVersion = await fetchBinaryVersion(bin.name);
+      } catch (e) {
+        // HEAD failed (offline mid-run, etc.). If we already have a copy, keep
+        // it; otherwise fall through and try a normal GET below.
+        if (has) { continue; }
+      }
+
+      if (has) {
+        const meta = await assetStorage.getFileMetadata(bin.name);
+        const cachedVersion = meta && meta.version;
+        // Up to date (or server won't tell us) -> keep the cached copy.
+        if (serverVersion === null || cachedVersion === serverVersion) continue;
+        console.log(`[binaries] ${bin.name} is stale (cached=${cachedVersion}, server=${serverVersion}); refreshing.`);
+      }
+
+      const resp = await fetch(bin.name, { credentials: 'same-origin' });
+      if (!resp.ok) { console.warn(`[binaries] bg fetch ${bin.name} failed: ${resp.status}`); continue; }
+      const blob = await resp.blob();
+      // Prefer the version from the GET response; fall back to the HEAD value.
+      const version = resp.headers.get('etag') || resp.headers.get('last-modified') || serverVersion || null;
+      await assetStorage.storeFile(bin.name, blob, null, { version: version });
+      console.log(`[binaries] Cached ${bin.name} for offline (${(blob.size / 1024 / 1024).toFixed(2)}MB, v=${version}).`);
+    }
+  } catch (e) {
+    console.warn('[binaries] Background caching skipped:', e);
+  }
+}
+
 async function prepareAssetStorage() {
   try {
     // Initialize IndexedDB storage
@@ -379,55 +374,47 @@ async function prepareAssetStorage() {
     await assetStorage.init();
 
     // Check if CLAW.REZ exists in IndexedDB
-    const hasClawRez = await assetStorage.hasFile('CLAW.REZ');
+    let hasClawRez = await assetStorage.hasFile('CLAW.REZ');
+
+    // Purge a legacy gzip-compressed CLAW.REZ. Older versions stored it
+    // compressed (blob type "application/gzip" etc.); this build has no
+    // decompressor, so such a copy is unusable. Delete it so the user isn't
+    // stuck with orphaned storage they can't clear, and treat it as absent
+    // (they'll be prompted to re-upload).
+    if (hasClawRez) {
+      const meta = await assetStorage.getFileMetadata('CLAW.REZ');
+      if (meta && /^application\/(gzip|x-gzip|zstd|br)$/i.test(meta.type || '')) {
+        console.warn('Removing legacy compressed CLAW.REZ (' + meta.type + '); re-upload required.');
+        await assetStorage.deleteFile('CLAW.REZ');
+        hasClawRez = false;
+      }
+    }
 
     if (!hasClawRez) {
-      console.log('CLAW.REZ not found in storage. Showing upload UI...');
+      console.log('CLAW.REZ not found in storage.');
+
+      // Check if device is offline
+      if (!navigator.onLine) {
+        console.log('Device is offline and CLAW.REZ not cached. Showing offline message...');
+        showOfflineNeedCache();
+        return false;
+      }
+
+      console.log('Showing upload UI...');
       showAssetUpload();
       await waitForUpload();
     } else {
       console.log('CLAW.REZ found in storage. Loading...');
-
-      // Get file metadata
       const metadata = await assetStorage.getFileMetadata('CLAW.REZ');
       console.log(`Stored size: ${(metadata.size / 1024 / 1024).toFixed(2)}MB`);
-
-      if (metadata.compressed) {
-        console.log(`Compression: ${metadata.compressionAlgorithm || 'gzip'}`);
-      }
     }
 
-    // Retrieve CLAW.REZ from IndexedDB
+    // Retrieve CLAW.REZ from IndexedDB. It is stored uncompressed, so it can be
+    // used directly with no decompression step.
     console.log('Retrieving CLAW.REZ from IndexedDB...');
-    const storedBlob = await assetStorage.getFile('CLAW.REZ');
-    if (!storedBlob) {
+    const clawRezBlob = await assetStorage.getFile('CLAW.REZ');
+    if (!clawRezBlob) {
       throw new Error('Failed to retrieve CLAW.REZ from storage');
-    }
-
-    // Check if file is compressed
-    const metadata = await assetStorage.getFileMetadata('CLAW.REZ');
-    let clawRezBlob = storedBlob;
-
-    if (metadata.compressed && metadata.compressionAlgorithm) {
-      console.log(`Decompressing CLAW.REZ using ${metadata.compressionAlgorithm}...`);
-      const startTime = performance.now();
-
-      try {
-        clawRezBlob = await decompressBlob(storedBlob, metadata.compressionAlgorithm);
-        const decompressTime = performance.now() - startTime;
-
-        console.log(`Decompressed size: ${(clawRezBlob.size / 1024 / 1024).toFixed(2)}MB`);
-        console.log(`Decompression took: ${decompressTime.toFixed(0)}ms`);
-        console.log(`Compression ratio: ${((1 - storedBlob.size / clawRezBlob.size) * 100).toFixed(1)}%`);
-      } catch (decompressError) {
-        console.error('Decompression failed:', decompressError);
-        alert(
-          `Failed to decompress CLAW.REZ using ${metadata.compressionAlgorithm}.\n\n` +
-          `Error: ${decompressError.message}\n\n` +
-          `Please clear browser storage and re-upload CLAW.REZ.`
-        );
-        return false;
-      }
     }
 
     // CRITICAL: Convert Blob to ArrayBuffer and store BEFORE returning
@@ -437,14 +424,19 @@ async function prepareAssetStorage() {
     clawRezData = new Uint8Array(arrayBuffer);
     console.log(`CLAW.REZ ready to mount (${(clawRezData.length / 1024 / 1024).toFixed(2)}MB)`);
 
+    // Cache/provide the WASM + data binaries so the game boots offline without
+    // the SW intercepting them (required for Safari). If this fails offline
+    // before they were ever cached, surface the offline screen.
+    const binariesReady = await prepareGameBinaries();
+    if (!binariesReady) {
+      if (!navigator.onLine) showOfflineNeedCache();
+      return false;
+    }
+
     return true;
 
   } catch (error) {
     console.error('Failed to prepare asset storage:', error);
-    alert(
-      `Failed to load game assets: ${error.message}\n\n` +
-      `Please check browser console for details.`
-    );
     return false;
   }
 }
@@ -501,7 +493,8 @@ export {
   reuploadClawRez,
   getStorageStats,
   prepareAssetStorage,
-  mountClawRezToFS
+  mountClawRezToFS,
+  cacheGameBinariesInBackground
 };
 
 // Keep window globals for HTML event handlers (permanent)
