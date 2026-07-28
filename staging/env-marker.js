@@ -19,5 +19,16 @@
       'padding-top:calc(3px + env(safe-area-inset-top));' +
       'padding-right:calc(7px + env(safe-area-inset-right));';
     document.body.appendChild(b);
+
+    // Append the SW cache version (e.g. "STAGING-v16") so it's obvious at a
+    // glance whether the latest staging deploy is being served. Read from the
+    // served sw.js, cache-busted so a stale copy never shows an old version.
+    fetch('sw.js?cb=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { return r.text(); })
+      .then(function (t) {
+        var v = t.match(/CACHE_VERSION\s*=\s*["'](v\d+)["']/);
+        if (v) b.textContent = 'STAGING-' + v[1];
+      })
+      .catch(function () { /* leave plain STAGING on failure */ });
   });
 })();
