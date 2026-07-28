@@ -716,18 +716,31 @@
       <div id="splashBar"></div>
     </div>
     <script>
-      // Drive the splash loading bar with real progress. Progress only moves
-      // forward (boot phases report out of order / coarsely), so we clamp to a
-      // monotonic max to avoid the bar jumping backwards.
+      // Drive the splash loading bar. Real progress (data-package download,
+      // then boot milestones) sets the floor via setSplashProgress; it only
+      // moves forward. Between milestones there are signal-less phases (notably
+      // the multi-second WASM compile/init after the download completes), so a
+      // slow "creep" eases the bar toward a ceiling to avoid a frozen-looking
+      // bar. Real updates always win over the creep.
       (function () {
         var el = document.getElementById('splashBar');
-        var cur = 0;
+        var cur = 0;      // displayed value
+        var floor = 0;    // last real progress reported
+        function paint() { if (el) el.style.setProperty('--progress', String(cur)); }
+
+        // Creep toward (floor + 15), capped at 95, so it never reaches 100
+        // without a real completion signal. ~0.4%/tick at 20fps.
+        var timer = setInterval(function () {
+          var ceiling = Math.min(95, floor + 15);
+          if (cur < ceiling) { cur = Math.min(ceiling, cur + 0.4); paint(); }
+        }, 50);
+
         window.setSplashProgress = function (pct) {
           if (typeof pct !== 'number' || Number.isNaN(pct)) return;
           pct = Math.max(0, Math.min(100, pct));
-          if (pct <= cur) return;
-          cur = pct;
-          if (el) el.style.setProperty('--progress', String(pct));
+          if (pct > floor) floor = pct;
+          if (pct > cur) { cur = pct; paint(); }
+          if (pct >= 100) { clearInterval(timer); }
         };
       })();
     </script>
