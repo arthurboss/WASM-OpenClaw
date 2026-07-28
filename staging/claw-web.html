@@ -510,6 +510,62 @@
         font-size: 0.9em;
       }
 
+      /* PWA splash / boot screen: the CLAW menu backdrop with an in-game-style
+         loading bar. Shown while the WASM engine and assets load (before the
+         SDL renderer exists, so the real in-engine bar cannot run yet). Built
+         as a reusable full-screen container so other start-flow screens can be
+         hosted inside it later. */
+      #splash {
+        position: fixed;
+        inset: 0;
+        /* Below the interactive start-flow screens (.onboard cards and the
+           play-button overlay at z-index 10000) so those remain usable; above
+           the canvas. The .onboard cards fully cover the splash; the
+           transparent play overlay shows the splash backdrop behind it. */
+        z-index: 9998;
+        display: none;
+        background: #1a0f08 center / cover no-repeat url("splash-bg.png");
+        /* Keep clear of notch / home indicator in the installed PWA */
+        padding:
+          env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+          env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+      }
+      #splash.visible { display: block; }
+
+      /* The loading bar mimics the engine's RenderLoadingScreen: a black track
+         with a red fill, centered horizontally, ~75% down the screen, thin. */
+      #splashBar {
+        position: absolute;
+        left: 50%;
+        top: 75%;
+        transform: translate(-50%, -50%);
+        width: min(50vw, 420px);
+        height: 10px;
+        background: #000;
+        border: 1px solid rgba(0, 0, 0, 0.6);
+        overflow: hidden;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+      }
+      #splashBar::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 40%;
+        background: #e23b2e; /* engine COLOR_RED loading fill */
+        /* Indeterminate sweep: Emscripten's boot progress is coarse/absent for
+           the IndexedDB path, so we animate rather than show a stuck number. */
+        animation: splashSweep 1.1s ease-in-out infinite;
+      }
+      @keyframes splashSweep {
+        0%   { left: -40%; }
+        100% { left: 100%; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #splashBar::before { animation-duration: 2.2s; }
+      }
+
       #startOverlay {
         position: fixed;
         top: 0; left: 0;
@@ -683,6 +739,12 @@
         document.body.classList.add("touch-device");
       }
     </script>
+
+    <!-- PWA splash / boot loading screen (CLAW menu backdrop + loading bar).
+         Shown immediately on load and hidden once the game is ready. -->
+    <div id="splash" class="visible" aria-hidden="true">
+      <div id="splashBar"></div>
+    </div>
 
     <!-- Rotate prompt: shown on narrow portrait screens (< 375px wide) -->
     <div id="rotatePrompt">
@@ -1590,6 +1652,11 @@
         window.markGameRunning = function () {
           window.__captainClawWebRunning = true;
           if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+          // Game is rendering — hide the splash. Done here (not in preRun) so
+          // the splash covers the canvas until the first real frame, avoiding a
+          // black flash between engine start and the menu appearing.
+          var splash = document.getElementById('splash');
+          if (splash) splash.classList.remove('visible');
         };
 
         // Catch fatal WASM boot failures that are thrown rather than routed
