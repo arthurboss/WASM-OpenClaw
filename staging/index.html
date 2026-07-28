@@ -1354,7 +1354,9 @@
           // download is the one granular signal Emscripten gives us during
           // boot; map its 0-100% onto the bar's first 80%, leaving the last
           // 20% for the WASM-init phase (advanced at preRun / markGameRunning).
-          if (Module.canvas) Module.canvas.style.display = "none";
+          // NOTE: do NOT touch canvas visibility here. The splash overlay covers
+          // the canvas during boot; Emscripten also calls setStatus AFTER run,
+          // so hiding the canvas here would leave a permanent black screen.
           var dl = Module.dataFileDownloads &&
                    Module.dataFileDownloads["openclaw.data"];
           if (dl && dl.total > 0 && window.setSplashProgress) {
