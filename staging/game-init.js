@@ -135,6 +135,12 @@ window.initGameWhenReady = async function() {
       // Boot immediately. Audio unlocks on the player's first interaction.
       setupAudioUnlockOnFirstInput();
 
+      // Assets are ready and the game is about to load: show the splash with
+      // its loading bar. On a first run the splash was suppressed so the upload
+      // screen led; now that the upload is done, bring it back for the load.
+      var splashEl = document.getElementById('splash');
+      if (splashEl) { splashEl.classList.add('visible', 'loading'); }
+
       // loadGame() is defined in inline script and handles openclaw.js injection
       if (typeof window.loadGame === 'function') {
         if (window.bootLog) window.bootLog('loadGame() -> inject openclaw.js');

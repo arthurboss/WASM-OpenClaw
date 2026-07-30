@@ -561,7 +561,11 @@
         border: 1px solid rgba(0, 0, 0, 0.6);
         overflow: hidden;
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+        /* Hidden until we confirm the game is actually loading (CLAW.REZ
+           cached). Prevents a misleading loading bar on the first-run upload. */
+        display: none;
       }
+      #splash.loading #splashBar { display: block; }
       /* Determinate fill: width tracks real load progress via the --progress
          custom property (0-100), set from JS as boot advances. Matches the
          engine's red-on-black loading bar. */
@@ -743,7 +747,10 @@
     </script>
 
     <!-- PWA splash / boot loading screen (CLAW menu backdrop + loading bar).
-         Shown immediately on load and hidden once the game is ready. -->
+         Shown immediately on load and hidden once the game is ready. The
+         loading bar only appears once we know the game is actually loading
+         (CLAW.REZ is cached); on a first run we suppress the splash so the
+         one-time upload screen is the first thing shown, not a loading bar. -->
     <div id="splash" class="visible" aria-hidden="true">
       <div id="splashFull"></div>
       <div id="splashBar"></div>
@@ -765,6 +772,38 @@
           full.classList.add('loaded');
         };
         img.src = src;
+      })();
+    </script>
+    <script>
+      // Decide the splash's role BEFORE the boot module loads, so a first-run
+      // player never sees a "loading" bar that should have been the upload
+      // screen. Peek at IndexedDB for a cached CLAW.REZ:
+      //   - cached   -> the game will boot; show the loading bar (#splash.loading)
+      //   - NOT cached (first run) -> hide the splash so the one-time upload
+      //     screen is the first thing shown, not a misleading loading bar.
+      // Opened WITHOUT a version so we never trigger an upgrade that could
+      // create an empty phantom store; if the store is absent, treat as not
+      // cached. Best-effort: on any error we leave the splash as-is.
+      (function () {
+        var splash = document.getElementById('splash');
+        if (!splash || !window.indexedDB) return;
+        var req;
+        try { req = indexedDB.open('ClawWebAssets'); } catch (e) { return; }
+        req.onsuccess = function (e) {
+          var db = e.target.result;
+          try {
+            if (!db.objectStoreNames.contains('files')) { splash.classList.remove('visible'); db.close(); return; }
+            var tx = db.transaction(['files'], 'readonly');
+            var g = tx.objectStore('files').getKey('CLAW.REZ');
+            g.onsuccess = function () {
+              if (g.result) splash.classList.add('loading');   // cached -> loading bar
+              else splash.classList.remove('visible');          // first run -> upload leads
+              db.close();
+            };
+            g.onerror = function () { db.close(); };
+          } catch (err) { try { db.close(); } catch (e2) {} }
+        };
+        req.onerror = function () { /* leave splash as-is */ };
       })();
     </script>
     <script>
