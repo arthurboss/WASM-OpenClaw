@@ -559,6 +559,22 @@
         background: #e23b2e; /* engine COLOR_RED loading fill */
         transition: width 0.25s ease-out;
       }
+      /* Boot timing readout (debug). Sits just below the loading bar. */
+      #splashDebug {
+        display: none;
+        position: absolute;
+        left: 50%;
+        top: calc(75% + 24px);
+        transform: translateX(-50%);
+        margin: 0;
+        max-width: 90vw;
+        font: 600 11px/1.4 ui-monospace, Menlo, Consolas, monospace;
+        color: #ffe;
+        text-shadow: 0 1px 2px #000, 0 0 3px #000;
+        white-space: pre;
+        text-align: left;
+        pointer-events: none;
+      }
 
       /* Floating install button for touch devices only */
       /* ---- Onboarding screens (install prompt + asset upload) ---- */
@@ -714,7 +730,31 @@
          Shown immediately on load and hidden once the game is ready. -->
     <div id="splash" class="visible" aria-hidden="true">
       <div id="splashBar"></div>
+      <pre id="splashDebug"></pre>
     </div>
+    <script>
+      // On-screen boot timing readout. Enabled with ?debug in the URL (and
+      // always on staging), so slow loads can be diagnosed on devices without a
+      // console (e.g. an installed iOS PWA). Each window.bootLog(label) stamps
+      // ms since page start and appends a line under the loading bar.
+      (function () {
+        var isStaging = /\/staging\//.test(location.pathname);
+        var wantDebug = /[?&]debug\b/.test(location.search) || isStaging;
+        var dbg = document.getElementById('splashDebug');
+        var t0 = (performance && performance.now) ? performance.now() : Date.now();
+        var last = t0;
+        window.bootLog = function (label) {
+          if (!wantDebug || !dbg) return;
+          var now = (performance && performance.now) ? performance.now() : Date.now();
+          var since = Math.round(now - t0);
+          var delta = Math.round(now - last);
+          last = now;
+          dbg.textContent += label + '  +' + delta + 'ms  (' + since + 'ms)\n';
+          dbg.style.display = 'block';
+        };
+        window.bootLog('page');
+      })();
+    </script>
     <script>
       // Drive the splash loading bar. Real progress (data-package download,
       // then boot milestones) sets the floor via setSplashProgress; it only
@@ -1277,6 +1317,7 @@
         // Default: 640x480 (4:3), Fullscreen: calculated from screen aspect ratio
         preRun: [
           function () {
+            if (window.bootLog) window.bootLog('preRun (wasm ready)');
             // Mount CLAW.REZ to virtual filesystem before game starts
             if (window.mountClawRezToFS) {
               const success = mountClawRezToFS();
@@ -1284,6 +1325,7 @@
                 console.error('Failed to mount CLAW.REZ');
               }
             }
+            if (window.bootLog) window.bootLog('CLAW.REZ mounted to FS');
             if (window.startLoadWatchdog) window.startLoadWatchdog();
 
             // Data package mounted and engine about to run: advance the splash
@@ -1642,12 +1684,23 @@
         window.markGameRunning = function () {
           window.__captainClawWebRunning = true;
           if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+          if (window.bootLog) window.bootLog('game running (menu)');
           // Game is rendering — fill the bar, then hide the splash. Done here
           // (not in preRun) so the splash covers the canvas until the first real
           // frame, avoiding a black flash between engine start and the menu.
           if (window.setSplashProgress) window.setSplashProgress(100);
           var splash = document.getElementById('splash');
-          if (splash) splash.classList.remove('visible');
+          if (splash) {
+            // In debug/staging, keep the splash a moment so the timing readout
+            // is legible before it disappears.
+            var wantDebug = /[?&]debug\b/.test(location.search) ||
+                            /\/staging\//.test(location.pathname);
+            if (wantDebug) {
+              setTimeout(function () { splash.classList.remove('visible'); }, 2500);
+            } else {
+              splash.classList.remove('visible');
+            }
+          }
         };
 
         // Catch fatal WASM boot failures that are thrown rather than routed

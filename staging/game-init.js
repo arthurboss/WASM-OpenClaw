@@ -121,6 +121,7 @@ function runInstallOnboarding() {
 window.initGameWhenReady = async function() {
 
   try {
+    if (window.bootLog) window.bootLog('initGameWhenReady');
     // Offer install before first-run upload (once, when applicable).
     await runInstallOnboarding();
 
@@ -128,6 +129,7 @@ window.initGameWhenReady = async function() {
     // run). No press-to-start gate: as soon as assets are ready we boot the
     // game straight to the menu.
     const success = await prepareAssetStorage();
+    if (window.bootLog) window.bootLog('assets prepared');
 
     if (success) {
       // Boot immediately. Audio unlocks on the player's first interaction.
@@ -135,6 +137,7 @@ window.initGameWhenReady = async function() {
 
       // loadGame() is defined in inline script and handles openclaw.js injection
       if (typeof window.loadGame === 'function') {
+        if (window.bootLog) window.bootLog('loadGame() -> inject openclaw.js');
         window.loadGame();
       } else {
         console.error('[Game Init] loadGame() function not found');
