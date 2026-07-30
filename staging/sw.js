@@ -7,7 +7,7 @@
 // share the origin's Cache Storage, and a version bump in one environment
 // would run activate -> caches.keys() -> delete the OTHER environment's cache.
 // registration.scope is the source of truth; fall back to the SW's own path.
-const CACHE_VERSION = "v20";
+const CACHE_VERSION = "v21";
 const SCOPE_PATH = (function () {
   try {
     return new URL(self.registration.scope).pathname;
@@ -33,14 +33,14 @@ const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 // is specific to WASM streaming compilation, not ordinary script/binary fetches.
 const SHELL_ASSETS = [
   "./claw-web.html",
-  "./game-init.js",
-  "./asset-storage.js",
-  "./asset-loader.js",
-  "./resource-loader.js",
-  "./graphics-bridge.js",
-  "./texture-bridge.js",
+  // Bundled boot module: game-init + asset-loader, asset-storage,
+  // resource-loader, graphics-bridge, texture-bridge (see bundle-boot.sh).
+  "./game-init.min.js",
+  // Classic scripts the HTML still loads individually.
   "./save-storage.js",
   "./gamepad-bridge.js",
+  "./pointer-bridge.js",
+  "./touch-controls.js",
   "./keyboard-capture.js",
   "./sw-register.js",
   "./env-marker.js",

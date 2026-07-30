@@ -122,15 +122,13 @@
     <!-- Viewport adapts to device width, allowing responsive scaling -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 
-    <!-- Preload critical ES modules for faster loading -->
-    <link rel="modulepreload" href="game-init.js" />
-    <link rel="modulepreload" href="asset-storage.js" />
-    <link rel="modulepreload" href="asset-loader.js" />
-    <link rel="modulepreload" href="resource-loader.js" />
+    <!-- Preload the bundled boot module. game-init.js and its imports
+         (asset-loader, asset-storage, resource-loader, graphics-bridge,
+         texture-bridge) are bundled into game-init.min.js by
+         scripts/bundle-boot.sh, so this is a single request instead of ~6. -->
+    <link rel="modulepreload" href="game-init.min.js" />
 
-    <!-- Prefetch non-critical modules (low priority) -->
-    <link rel="prefetch" as="script" href="graphics-bridge.js" />
-    <link rel="prefetch" as="script" href="texture-bridge.js" />
+    <!-- Prefetch non-critical classic script (low priority) -->
     <link rel="prefetch" as="script" href="gamepad-bridge.js" />
 
     <style>
@@ -1443,8 +1441,9 @@
       // Note: window.initGameWhenReady will be defined by game-init.js module
     </script>
 
-    <!-- Main ES Module - loads all dependencies and exposes functions to window -->
-    <script type="module" src="game-init.js"></script>
+    <!-- Main ES Module (bundled: game-init + asset-loader, asset-storage,
+         resource-loader, graphics-bridge, texture-bridge) -->
+    <script type="module" src="game-init.min.js"></script>
 
     <!-- Keyboard capture - prevents OS shortcuts from interfering with game -->
     <script src="keyboard-capture.js"></script>
@@ -1476,9 +1475,8 @@
       }
     </script>
 
-    <!-- Graphics Bridges for WASM Module (optional - loaded by game-init.js) -->
-    <script type="module" src="graphics-bridge.js"></script>
-    <script type="module" src="texture-bridge.js"></script>
+    <!-- graphics-bridge.js and texture-bridge.js are bundled into
+         game-init.min.js (their window.* bridge globals are set there). -->
 
     <!-- Save Storage Bridge for IndexedDB game saves -->
     <script type="module" src="save-storage.js"></script>
