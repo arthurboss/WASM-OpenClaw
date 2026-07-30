@@ -7,7 +7,7 @@
 // share the origin's Cache Storage, and a version bump in one environment
 // would run activate -> caches.keys() -> delete the OTHER environment's cache.
 // registration.scope is the source of truth; fall back to the SW's own path.
-const CACHE_VERSION = "v21";
+const CACHE_VERSION = "v22";
 const SCOPE_PATH = (function () {
   try {
     return new URL(self.registration.scope).pathname;
@@ -52,6 +52,7 @@ const SHELL_ASSETS = [
   "./favicon-16x16.png",
   "./favicon-32x32.png",
   "./preview.png",
+  "./splash-bg.webp",
   "./splash-bg.png",
   "./music/midi-player.js",
   "./music/spessasynth_processor.min.js",

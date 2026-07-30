@@ -522,13 +522,31 @@
            transparent play overlay shows the splash backdrop behind it. */
         z-index: 9998;
         display: none;
-        background: #1a0f08 center / cover no-repeat url("splash-bg.png");
+        /* Blur-up (LQIP): a ~90-byte blurred thumbnail is inlined as a base64
+           data-URI so it paints INSTANTLY with no network request (part of the
+           cached shell). The full image (#splashFull) fades in on top once it
+           downloads. Scaled to cover and blurred up to hide the low resolution. */
+        background: #1a0f08 center / cover no-repeat
+          url("data:image/webp;base64,UklGRlYAAABXRUJQVlA4IEoAAABQAwCdASowAA4APp1EnEolo6KhqqgAsBOJQBUkaRAyq/xEpAD+7Dk9D+Ld7ea6m/1du/ztI9kIzCCuL1pe6BPp6mbE99p8I08AAA==");
         /* Keep clear of notch / home indicator in the installed PWA */
         padding:
           env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
           env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
       }
       #splash.visible { display: block; }
+
+      /* Full-resolution backdrop, layered over the blurred data-URI. Starts
+         transparent; JS adds .loaded once the image has decoded, fading it in
+         over the blur so there is no hard pop. */
+      #splashFull {
+        position: absolute;
+        inset: 0;
+        background: center / cover no-repeat var(--splash-full, none);
+        opacity: 0;
+        transition: opacity 0.4s ease-out;
+        pointer-events: none;
+      }
+      #splashFull.loaded { opacity: 1; }
 
       /* The loading bar mimics the engine's RenderLoadingScreen: a black track
          with a red fill, centered horizontally, ~75% down the screen, thin. */
@@ -727,9 +745,28 @@
     <!-- PWA splash / boot loading screen (CLAW menu backdrop + loading bar).
          Shown immediately on load and hidden once the game is ready. -->
     <div id="splash" class="visible" aria-hidden="true">
+      <div id="splashFull"></div>
       <div id="splashBar"></div>
       <pre id="splashDebug"></pre>
     </div>
+    <script>
+      // Blur-up: load the full splash backdrop (WebP, PNG fallback) and fade it
+      // in over the inlined blurred thumbnail once it has decoded. Preloading
+      // via an Image object avoids a flash of the undecoded image.
+      (function () {
+        var full = document.getElementById('splashFull');
+        if (!full) return;
+        var supportsWebp = document.createElement('canvas')
+          .toDataURL('image/webp').indexOf('data:image/webp') === 0;
+        var src = supportsWebp ? 'splash-bg.webp' : 'splash-bg.png';
+        var img = new Image();
+        img.onload = function () {
+          full.style.setProperty('--splash-full', 'url("' + src + '")');
+          full.classList.add('loaded');
+        };
+        img.src = src;
+      })();
+    </script>
     <script>
       // On-screen boot timing readout. Enabled with ?debug in the URL (and
       // always on staging), so slow loads can be diagnosed on devices without a
