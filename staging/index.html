@@ -775,47 +775,6 @@
       })();
     </script>
     <script>
-      // Decide the splash's role BEFORE the boot module loads, so a first-run
-      // player never sees a "loading" bar that should have been the upload
-      // screen. Peek at IndexedDB for a cached CLAW.REZ:
-      //   - cached   -> the game will boot; show the loading bar (#splash.loading)
-      //   - NOT cached (first run) -> hide the splash so the one-time upload
-      //     screen is the first thing shown, not a misleading loading bar.
-      // Opened WITHOUT a version so we never trigger an upgrade that could
-      // create an empty phantom store; if the store is absent, treat as not
-      // cached. Best-effort: on any error we leave the splash as-is.
-      (function () {
-        var splash = document.getElementById('splash');
-        if (!splash || !window.indexedDB) return;
-
-        function markLoading() { splash.classList.add('loading'); }
-        function firstRun() { splash.classList.remove('visible'); }
-
-        // CRITICAL: never call indexedDB.open() here without knowing the DB
-        // already exists. Opening a non-existent DB creates it at version 1
-        // with NO object store; AssetStorage.init() then opens the same
-        // version, no upgrade fires, and the game hangs. So gate on
-        // databases() first and only open when it truly exists. Without
-        // databases() support, skip the peek and leave the splash visible
-        // (AssetStorage will still show the upload screen as before).
-        if (!indexedDB.databases) return;
-        indexedDB.databases().then(function (list) {
-          var exists = (list || []).some(function (d) { return d.name === 'ClawWebAssets'; });
-          if (!exists) { firstRun(); return; }   // no DB at all -> first run
-          var req = indexedDB.open('ClawWebAssets'); // opens existing at its version
-          req.onsuccess = function (e) {
-            var db = e.target.result;
-            try {
-              if (!db.objectStoreNames.contains('files')) { firstRun(); db.close(); return; }
-              var g = db.transaction(['files'], 'readonly').objectStore('files').getKey('CLAW.REZ');
-              g.onsuccess = function () { if (g.result) markLoading(); else firstRun(); db.close(); };
-              g.onerror = function () { db.close(); };
-            } catch (err) { try { db.close(); } catch (e2) {} }
-          };
-        }).catch(function () { /* leave splash as-is */ });
-      })();
-    </script>
-    <script>
       // On-screen boot timing readout. Enabled with ?debug in the URL (and
       // always on staging), so slow loads can be diagnosed on devices without a
       // console (e.g. an installed iOS PWA). Each window.bootLog(label) stamps

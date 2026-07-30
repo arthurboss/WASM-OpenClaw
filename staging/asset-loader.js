@@ -398,8 +398,16 @@ async function prepareAssetStorage() {
       }
     }
 
+    // Drive the splash's role now that we know cached-vs-first-run (this module
+    // is the single IndexedDB owner, so it decides — no separate early peek
+    // that would race the DB connection). Cached -> show the loading bar; not
+    // cached -> hide the splash so the upload/offline screen leads, with no
+    // misleading loading bar.
+    var splashEl = document.getElementById('splash');
+
     if (!hasClawRez) {
       console.log('CLAW.REZ not found in storage.');
+      if (splashEl) splashEl.classList.remove('visible');
 
       // Check if device is offline
       if (!navigator.onLine) {
@@ -413,6 +421,7 @@ async function prepareAssetStorage() {
       await waitForUpload();
     } else {
       console.log('CLAW.REZ found in storage. Loading...');
+      if (splashEl) splashEl.classList.add('visible', 'loading');
       const metadata = await assetStorage.getFileMetadata('CLAW.REZ');
       console.log(`Stored size: ${(metadata.size / 1024 / 1024).toFixed(2)}MB`);
     }
