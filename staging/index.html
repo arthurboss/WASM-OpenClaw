@@ -787,23 +787,32 @@
       (function () {
         var splash = document.getElementById('splash');
         if (!splash || !window.indexedDB) return;
-        var req;
-        try { req = indexedDB.open('ClawWebAssets'); } catch (e) { return; }
-        req.onsuccess = function (e) {
-          var db = e.target.result;
-          try {
-            if (!db.objectStoreNames.contains('files')) { splash.classList.remove('visible'); db.close(); return; }
-            var tx = db.transaction(['files'], 'readonly');
-            var g = tx.objectStore('files').getKey('CLAW.REZ');
-            g.onsuccess = function () {
-              if (g.result) splash.classList.add('loading');   // cached -> loading bar
-              else splash.classList.remove('visible');          // first run -> upload leads
-              db.close();
-            };
-            g.onerror = function () { db.close(); };
-          } catch (err) { try { db.close(); } catch (e2) {} }
-        };
-        req.onerror = function () { /* leave splash as-is */ };
+
+        function markLoading() { splash.classList.add('loading'); }
+        function firstRun() { splash.classList.remove('visible'); }
+
+        // CRITICAL: never call indexedDB.open() here without knowing the DB
+        // already exists. Opening a non-existent DB creates it at version 1
+        // with NO object store; AssetStorage.init() then opens the same
+        // version, no upgrade fires, and the game hangs. So gate on
+        // databases() first and only open when it truly exists. Without
+        // databases() support, skip the peek and leave the splash visible
+        // (AssetStorage will still show the upload screen as before).
+        if (!indexedDB.databases) return;
+        indexedDB.databases().then(function (list) {
+          var exists = (list || []).some(function (d) { return d.name === 'ClawWebAssets'; });
+          if (!exists) { firstRun(); return; }   // no DB at all -> first run
+          var req = indexedDB.open('ClawWebAssets'); // opens existing at its version
+          req.onsuccess = function (e) {
+            var db = e.target.result;
+            try {
+              if (!db.objectStoreNames.contains('files')) { firstRun(); db.close(); return; }
+              var g = db.transaction(['files'], 'readonly').objectStore('files').getKey('CLAW.REZ');
+              g.onsuccess = function () { if (g.result) markLoading(); else firstRun(); db.close(); };
+              g.onerror = function () { db.close(); };
+            } catch (err) { try { db.close(); } catch (e2) {} }
+          };
+        }).catch(function () { /* leave splash as-is */ });
       })();
     </script>
     <script>
