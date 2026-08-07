@@ -66,10 +66,10 @@ self.addEventListener("install", (event) => {
         // Use addAll to fail fast if any asset is missing
         return cache.addAll(SHELL_ASSETS);
       })
-      .then(() => {
-        // Force waiting service worker to become active immediately
-        return self.skipWaiting();
-      })
+      // Intentionally NOT calling skipWaiting() — the new SW waits until all tabs
+      // using the old SW are closed. This prevents mid-session page reloads that
+      // can interrupt IndexedDB transactions (e.g., CLAW.REZ upload). Standard safe
+      // update behavior: users get the new SW on next PWA launch, not mid-session.
   );
 });
 
