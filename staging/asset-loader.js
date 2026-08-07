@@ -264,11 +264,10 @@ const GAME_BINARIES = [
   { name: 'openclaw.data' },
 ];
 
-// Feed cached binary bytes to Emscripten so it never hits the network. Used
-// whenever the binaries are already in IndexedDB, online OR offline: on a slow
-// connection an IndexedDB read is far faster than re-downloading ~20MB every
-// launch. Setting Module.wasmBinary forces a non-streaming compile, but that
-// cost is small next to a repeated multi-MB network fetch.
+// Feed cached binary bytes to Emscripten so it never hits the network. Only
+// used when the binaries are already in IndexedDB (the offline path). Setting
+// Module.wasmBinary forces the slower non-streaming compile and holds the whole
+// wasm in memory, so we deliberately do NOT do this online.
 async function feedBinariesFromCache() {
   const wasmBlob = await assetStorage.getFile('openclaw.wasm');
   const dataBlob = await assetStorage.getFile('openclaw.data');
@@ -285,37 +284,30 @@ async function feedBinariesFromCache() {
     if (name && name.includes('openclaw.data')) return dataBuffer;
     return null;
   };
-  console.log('[binaries] Serving openclaw.wasm/.data from IndexedDB.');
+  console.log('[binaries] Serving openclaw.wasm/.data from IndexedDB (offline).');
   return true;
 }
 
 // Decide how the game binaries are provided for THIS boot.
-// - Cached (online or offline) -> feed from IndexedDB. Avoids re-downloading
-//   ~20MB on every online launch, which dominates load time on slow networks.
-//   A newer deploy is picked up by the background version check (see
-//   cacheGameBinariesInBackground), refreshing the cache for the next launch.
-// - Not cached, online -> let Emscripten stream from the network (first run);
-//   cached in the background afterwards for subsequent launches.
-// - Not cached, offline -> cannot boot; caller shows the offline screen.
+// - Online  -> always let Emscripten stream them from the network (fast,
+//   low-memory, streaming compile). Never touch the cache: reading 47MB from
+//   IndexedDB + non-streaming compile is strictly slower. Binaries are cached
+//   in the background after boot for future offline use.
+// - Offline, cached -> feed the bytes from IndexedDB (works on Safari).
+// - Offline, not cached -> cannot boot; caller shows the offline screen.
 // Returns true if the game can proceed to boot.
 async function prepareGameBinaries() {
   if (!assetStorage) return false;
 
-  const hasWasm = await assetStorage.hasFile('openclaw.wasm');
-  const hasData = await assetStorage.hasFile('openclaw.data');
-  if (hasWasm && hasData) {
-    const ok = await feedBinariesFromCache();
-    if (ok) return true;
-    // Fall through to network if the cached read failed for any reason.
-  }
-
   if (navigator.onLine) {
-    console.log('[binaries] Not cached; streaming from network this run.');
+    console.log('[binaries] Online; streaming from network this run.');
     return true;
   }
 
-  console.warn('[binaries] Offline and openclaw.wasm/.data not cached.');
-  return false;
+  // Offline: must serve from IndexedDB, if we cached them on a prior run.
+  const ok = await feedBinariesFromCache();
+  if (!ok) console.warn('[binaries] Offline and openclaw.wasm/.data not cached.');
+  return ok;
 }
 
 // Version tag for a game binary as served right now. Uses the ETag (falling
@@ -398,16 +390,8 @@ async function prepareAssetStorage() {
       }
     }
 
-    // Drive the splash's role now that we know cached-vs-first-run (this module
-    // is the single IndexedDB owner, so it decides — no separate early peek
-    // that would race the DB connection). Cached -> show the loading bar; not
-    // cached -> hide the splash so the upload/offline screen leads, with no
-    // misleading loading bar.
-    var splashEl = document.getElementById('splash');
-
     if (!hasClawRez) {
       console.log('CLAW.REZ not found in storage.');
-      if (splashEl) splashEl.classList.remove('visible');
 
       // Check if device is offline
       if (!navigator.onLine) {
@@ -421,7 +405,6 @@ async function prepareAssetStorage() {
       await waitForUpload();
     } else {
       console.log('CLAW.REZ found in storage. Loading...');
-      if (splashEl) splashEl.classList.add('visible', 'loading');
       const metadata = await assetStorage.getFileMetadata('CLAW.REZ');
       console.log(`Stored size: ${(metadata.size / 1024 / 1024).toFixed(2)}MB`);
     }

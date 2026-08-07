@@ -122,13 +122,15 @@
     <!-- Viewport adapts to device width, allowing responsive scaling -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 
-    <!-- Preload the bundled boot module. game-init.js and its imports
-         (asset-loader, asset-storage, resource-loader, graphics-bridge,
-         texture-bridge) are bundled into game-init.min.js by
-         scripts/bundle-boot.sh, so this is a single request instead of ~6. -->
-    <link rel="modulepreload" href="game-init.min.js" />
+    <!-- Preload critical ES modules for faster loading -->
+    <link rel="modulepreload" href="game-init.js" />
+    <link rel="modulepreload" href="asset-storage.js" />
+    <link rel="modulepreload" href="asset-loader.js" />
+    <link rel="modulepreload" href="resource-loader.js" />
 
-    <!-- Prefetch non-critical classic script (low priority) -->
+    <!-- Prefetch non-critical modules (low priority) -->
+    <link rel="prefetch" as="script" href="graphics-bridge.js" />
+    <link rel="prefetch" as="script" href="texture-bridge.js" />
     <link rel="prefetch" as="script" href="gamepad-bridge.js" />
 
     <style>
@@ -508,92 +510,28 @@
         font-size: 0.9em;
       }
 
-      /* PWA splash / boot screen: the CLAW menu backdrop with an in-game-style
-         loading bar. Shown while the WASM engine and assets load (before the
-         SDL renderer exists, so the real in-engine bar cannot run yet). Built
-         as a reusable full-screen container so other start-flow screens can be
-         hosted inside it later. */
-      #splash {
+      #startOverlay {
         position: fixed;
-        inset: 0;
-        /* Below the interactive start-flow screens (.onboard cards and the
-           play-button overlay at z-index 10000) so those remain usable; above
-           the canvas. The .onboard cards fully cover the splash; the
-           transparent play overlay shows the splash backdrop behind it. */
-        z-index: 9998;
-        display: none;
-        /* Blur-up (LQIP): a ~90-byte blurred thumbnail is inlined as a base64
-           data-URI so it paints INSTANTLY with no network request (part of the
-           cached shell). The full image (#splashFull) fades in on top once it
-           downloads. Scaled to cover and blurred up to hide the low resolution. */
-        background: #1a0f08 center / cover no-repeat
-          url("data:image/webp;base64,UklGRlYAAABXRUJQVlA4IEoAAABQAwCdASowAA4APp1EnEolo6KhqqgAsBOJQBUkaRAyq/xEpAD+7Dk9D+Ld7ea6m/1du/ztI9kIzCCuL1pe6BPp6mbE99p8I08AAA==");
-        /* Keep clear of notch / home indicator in the installed PWA */
-        padding:
-          env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
-          env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        background: transparent;
       }
-      #splash.visible { display: block; }
 
-      /* Full-resolution backdrop, layered over the blurred data-URI. Starts
-         transparent; JS adds .loaded once the image has decoded, fading it in
-         over the blur so there is no hard pop. */
-      #splashFull {
-        position: absolute;
-        inset: 0;
-        background: center / cover no-repeat var(--splash-full, none);
-        opacity: 0;
-        transition: opacity 0.4s ease-out;
-        pointer-events: none;
+      #startOverlay svg {
+        width: 120px;
+        height: 120px;
+        opacity: 0.85;
+        filter: drop-shadow(0 0 12px rgba(0,0,0,0.8));
+        transition: opacity 0.15s;
       }
-      #splashFull.loaded { opacity: 1; }
 
-      /* The loading bar mimics the engine's RenderLoadingScreen: a black track
-         with a red fill, centered horizontally, ~75% down the screen, thin. */
-      #splashBar {
-        position: absolute;
-        left: 50%;
-        top: 75%;
-        transform: translate(-50%, -50%);
-        width: min(50vw, 420px);
-        height: 10px;
-        background: #000;
-        border: 1px solid rgba(0, 0, 0, 0.6);
-        overflow: hidden;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
-        /* Hidden until we confirm the game is actually loading (CLAW.REZ
-           cached). Prevents a misleading loading bar on the first-run upload. */
-        display: none;
-      }
-      #splash.loading #splashBar { display: block; }
-      /* Determinate fill: width tracks real load progress via the --progress
-         custom property (0-100), set from JS as boot advances. Matches the
-         engine's red-on-black loading bar. */
-      #splashBar::before {
-        content: "";
-        position: absolute;
-        top: 0;
-        left: 0;
-        height: 100%;
-        width: calc(var(--progress, 0) * 1%);
-        background: #e23b2e; /* engine COLOR_RED loading fill */
-        transition: width 0.25s ease-out;
-      }
-      /* Boot timing readout (debug). Sits just below the loading bar. */
-      #splashDebug {
-        display: none;
-        position: absolute;
-        left: 50%;
-        top: calc(75% + 24px);
-        transform: translateX(-50%);
-        margin: 0;
-        max-width: 90vw;
-        font: 600 11px/1.4 ui-monospace, Menlo, Consolas, monospace;
-        color: #ffe;
-        text-shadow: 0 1px 2px #000, 0 0 3px #000;
-        white-space: pre;
-        text-align: left;
-        pointer-events: none;
+      #startOverlay:hover svg {
+        opacity: 1;
       }
 
       /* Floating install button for touch devices only */
@@ -746,91 +684,17 @@
       }
     </script>
 
-    <!-- PWA splash / boot loading screen (CLAW menu backdrop + loading bar).
-         Shown immediately on load and hidden once the game is ready. The
-         loading bar only appears once we know the game is actually loading
-         (CLAW.REZ is cached); on a first run we suppress the splash so the
-         one-time upload screen is the first thing shown, not a loading bar. -->
-    <div id="splash" class="visible" aria-hidden="true">
-      <div id="splashFull"></div>
-      <div id="splashBar"></div>
-      <pre id="splashDebug"></pre>
-    </div>
-    <script>
-      // Blur-up: load the full splash backdrop (WebP, PNG fallback) and fade it
-      // in over the inlined blurred thumbnail once it has decoded. Preloading
-      // via an Image object avoids a flash of the undecoded image.
-      (function () {
-        var full = document.getElementById('splashFull');
-        if (!full) return;
-        var supportsWebp = document.createElement('canvas')
-          .toDataURL('image/webp').indexOf('data:image/webp') === 0;
-        var src = supportsWebp ? 'splash-bg.webp' : 'splash-bg.png';
-        var img = new Image();
-        img.onload = function () {
-          full.style.setProperty('--splash-full', 'url("' + src + '")');
-          full.classList.add('loaded');
-        };
-        img.src = src;
-      })();
-    </script>
-    <script>
-      // On-screen boot timing readout. Enabled with ?debug in the URL (and
-      // always on staging), so slow loads can be diagnosed on devices without a
-      // console (e.g. an installed iOS PWA). Each window.bootLog(label) stamps
-      // ms since page start and appends a line under the loading bar.
-      (function () {
-        var isStaging = /\/staging\//.test(location.pathname);
-        var wantDebug = /[?&]debug\b/.test(location.search) || isStaging;
-        var dbg = document.getElementById('splashDebug');
-        var t0 = (performance && performance.now) ? performance.now() : Date.now();
-        var last = t0;
-        window.bootLog = function (label) {
-          if (!wantDebug || !dbg) return;
-          var now = (performance && performance.now) ? performance.now() : Date.now();
-          var since = Math.round(now - t0);
-          var delta = Math.round(now - last);
-          last = now;
-          dbg.textContent += label + '  +' + delta + 'ms  (' + since + 'ms)\n';
-          dbg.style.display = 'block';
-        };
-        window.bootLog('page');
-      })();
-    </script>
-    <script>
-      // Drive the splash loading bar. Real progress (data-package download,
-      // then boot milestones) sets the floor via setSplashProgress; it only
-      // moves forward. Between milestones there are signal-less phases (notably
-      // the multi-second WASM compile/init after the download completes), so a
-      // slow "creep" eases the bar toward a ceiling to avoid a frozen-looking
-      // bar. Real updates always win over the creep.
-      (function () {
-        var el = document.getElementById('splashBar');
-        var cur = 0;      // displayed value
-        var floor = 0;    // last real progress reported
-        function paint() { if (el) el.style.setProperty('--progress', String(cur)); }
-
-        // Creep toward (floor + 15), capped at 95, so it never reaches 100
-        // without a real completion signal. ~0.4%/tick at 20fps.
-        var timer = setInterval(function () {
-          var ceiling = Math.min(95, floor + 15);
-          if (cur < ceiling) { cur = Math.min(ceiling, cur + 0.4); paint(); }
-        }, 50);
-
-        window.setSplashProgress = function (pct) {
-          if (typeof pct !== 'number' || Number.isNaN(pct)) return;
-          pct = Math.max(0, Math.min(100, pct));
-          if (pct > floor) floor = pct;
-          if (pct > cur) { cur = pct; paint(); }
-          if (pct >= 100) { clearInterval(timer); }
-        };
-      })();
-    </script>
-
     <!-- Rotate prompt: shown on narrow portrait screens (< 375px wide) -->
     <div id="rotatePrompt">
       <div class="rotate-icon">📱</div>
       <div>Please rotate your device to landscape to play.</div>
+    </div>
+
+    <div id="startOverlay" style="display: none;" onclick="window._startOverlayClick && window._startOverlayClick()">
+      <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="50" cy="50" r="47" fill="rgba(0,0,0,0.55)" stroke="rgba(255,255,255,0.3)" stroke-width="2"/>
+        <polygon points="40,33 70,50 40,67" fill="white"/>
+      </svg>
     </div>
 
     <!-- Asset Upload UI (shown after the install screen, on first run) -->
@@ -1359,7 +1223,6 @@
         // Default: 640x480 (4:3), Fullscreen: calculated from screen aspect ratio
         preRun: [
           function () {
-            if (window.bootLog) window.bootLog('preRun (wasm ready)');
             // Mount CLAW.REZ to virtual filesystem before game starts
             if (window.mountClawRezToFS) {
               const success = mountClawRezToFS();
@@ -1367,19 +1230,15 @@
                 console.error('Failed to mount CLAW.REZ');
               }
             }
-            if (window.bootLog) window.bootLog('CLAW.REZ mounted to FS');
             if (window.startLoadWatchdog) window.startLoadWatchdog();
-
-            // Data package mounted and engine about to run: advance the splash
-            // bar past the download phase. It reaches 100% at markGameRunning.
-            if (window.setSplashProgress) window.setSplashProgress(90);
 
             // Set initial canvas dimensions (may be overridden by fullscreen)
             var canvas = Module.canvas;
             Module.canvas.widthNative = canvas.width;
             Module.canvas.heightNative = canvas.height;
 
-            if (loadingElement) { loadingElement.remove(); loadingElement = null; }
+            loadingElement.remove();
+            loadingElement = null;
             Module.canvas.style.display = "block";
           },
         ],
@@ -1434,17 +1293,22 @@
           },
         },
         setStatus: function (text) {
-          // Feed the splash loading bar. The data package (openclaw.data)
-          // download is the one granular signal Emscripten gives us during
-          // boot; map its 0-100% onto the bar's first 80%, leaving the last
-          // 20% for the WASM-init phase (advanced at preRun / markGameRunning).
-          // NOTE: do NOT touch canvas visibility here. The splash overlay covers
-          // the canvas during boot; Emscripten also calls setStatus AFTER run,
-          // so hiding the canvas here would leave a permanent black screen.
-          var dl = Module.dataFileDownloads &&
-                   Module.dataFileDownloads["openclaw.data"];
-          if (dl && dl.total > 0 && window.setSplashProgress) {
-            window.setSplashProgress((dl.loaded / dl.total) * 80);
+          if (loadingElement) {
+            Module.canvas.style.display = "none";
+            // "Loading", not "downloading": assets come from local storage
+            // (IndexedDB / the embedded data package), not the network. total
+            // is 0 until the data package reports progress, so guard the divide
+            // to avoid showing "NaN%".
+            var dl = Module.dataFileDownloads["openclaw.data"];
+            if (dl && dl.total > 0) {
+              var progress = ((dl.loaded / dl.total) * 100) | 0;
+              loadingElement.innerHTML =
+                progress < 100
+                  ? "Loading game resources... " + progress + "%"
+                  : "Game resources loaded. Starting...";
+            } else {
+              loadingElement.innerHTML = "Loading game resources...";
+            }
           }
         },
 
@@ -1485,9 +1349,8 @@
       // Note: window.initGameWhenReady will be defined by game-init.js module
     </script>
 
-    <!-- Main ES Module (bundled: game-init + asset-loader, asset-storage,
-         resource-loader, graphics-bridge, texture-bridge) -->
-    <script type="module" src="game-init.min.js"></script>
+    <!-- Main ES Module - loads all dependencies and exposes functions to window -->
+    <script type="module" src="game-init.js"></script>
 
     <!-- Keyboard capture - prevents OS shortcuts from interfering with game -->
     <script src="keyboard-capture.js"></script>
@@ -1519,8 +1382,9 @@
       }
     </script>
 
-    <!-- graphics-bridge.js and texture-bridge.js are bundled into
-         game-init.min.js (their window.* bridge globals are set there). -->
+    <!-- Graphics Bridges for WASM Module (optional - loaded by game-init.js) -->
+    <script type="module" src="graphics-bridge.js"></script>
+    <script type="module" src="texture-bridge.js"></script>
 
     <!-- Save Storage Bridge for IndexedDB game saves -->
     <script type="module" src="save-storage.js"></script>
@@ -1726,23 +1590,6 @@
         window.markGameRunning = function () {
           window.__captainClawWebRunning = true;
           if (watchdog) { clearTimeout(watchdog); watchdog = null; }
-          if (window.bootLog) window.bootLog('game running (menu)');
-          // Game is rendering — fill the bar, then hide the splash. Done here
-          // (not in preRun) so the splash covers the canvas until the first real
-          // frame, avoiding a black flash between engine start and the menu.
-          if (window.setSplashProgress) window.setSplashProgress(100);
-          var splash = document.getElementById('splash');
-          if (splash) {
-            // In debug/staging, keep the splash a moment so the timing readout
-            // is legible before it disappears.
-            var wantDebug = /[?&]debug\b/.test(location.search) ||
-                            /\/staging\//.test(location.pathname);
-            if (wantDebug) {
-              setTimeout(function () { splash.classList.remove('visible'); }, 2500);
-            } else {
-              splash.classList.remove('visible');
-            }
-          }
         };
 
         // Catch fatal WASM boot failures that are thrown rather than routed

@@ -3,6 +3,7 @@
  * Imports all modules and exposes necessary functions to window for HTML compatibility
  */
 
+import { AssetStorage } from './asset-storage.js';
 import {
   validateClawRezFile,
   uploadClawRez,
@@ -57,24 +58,41 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') requestWakeLock();
 });
 
-// Audio unlock without a press-to-start screen. Browser autoplay policy blocks
-// creating/resuming an AudioContext before a user gesture, so instead of gating
-// the whole game behind a click, we boot straight to the menu and unlock audio
-// on the player's FIRST interaction (tap/click/key). Sound effects and music
-// then kick in automatically from that point.
-function setupAudioUnlockOnFirstInput() {
-  document.body.classList.add('game-started');
-  const unlock = function () {
-    prewarmAudioContext();
-    // Warm the level-music synth (AudioWorklet + 8.4MB soundfont) on this first
-    // gesture so it's ready before the first level. Fire-and-forget.
-    if (typeof window.warmLevelMidi === 'function') window.warmLevelMidi();
-    requestWakeLock();
-    document.removeEventListener('pointerdown', unlock, true);
-    document.removeEventListener('keydown', unlock, true);
-  };
-  document.addEventListener('pointerdown', unlock, true);
-  document.addEventListener('keydown', unlock, true);
+function waitForStartClick() {
+  // Reveals the in-game controls (.bottom-controls, touch install button),
+  // which stay hidden until the start overlay is gone so their clicks can't
+  // fall through to the overlay and start the game prematurely.
+  const markStarted = () => document.body.classList.add('game-started');
+  return new Promise((resolve) => {
+    if (window.audioContext && window.audioContext.state === 'running') {
+      markStarted(); resolve(); return;
+    }
+    const overlay = document.getElementById('startOverlay');
+    if (!overlay) { markStarted(); resolve(); return; }
+    overlay.style.display = 'flex';
+    window._startOverlayClick = function() {
+      prewarmAudioContext();
+      // Warm the level-music synth now (AudioWorklet + 8.4MB soundfont) so it's
+      // ready before the first level, instead of loading lazily after a level
+      // starts. Fire-and-forget: never block the game start on it.
+      if (typeof window.warmLevelMidi === 'function') window.warmLevelMidi();
+      overlay.style.display = 'none';
+      markStarted();
+      window._startOverlayClick = null;
+      requestWakeLock();
+      resolve();
+    };
+  });
+}
+
+async function checkClawRezCached() {
+  try {
+    const storage = new AssetStorage();
+    await storage.init();
+    return await storage.hasFile('CLAW.REZ');
+  } catch {
+    return false;
+  }
 }
 
 // Show the install onboarding screen once, before first-run upload. Resolves
@@ -121,29 +139,27 @@ function runInstallOnboarding() {
 window.initGameWhenReady = async function() {
 
   try {
-    if (window.bootLog) window.bootLog('initGameWhenReady');
     // Offer install before first-run upload (once, when applicable).
     await runInstallOnboarding();
 
-    // Prepare CLAW.REZ (retrieve from IndexedDB, or run the upload UI on first
-    // run). No press-to-start gate: as soon as assets are ready we boot the
-    // game straight to the menu.
-    const success = await prepareAssetStorage();
-    if (window.bootLog) window.bootLog('assets prepared');
+    const hasCached = await checkClawRezCached();
+
+    let success;
+    if (hasCached) {
+      // CLAW.REZ already in storage — load it and show play button in parallel.
+      [success] = await Promise.all([prepareAssetStorage(), waitForStartClick()]);
+    } else {
+      // First run — upload must complete before showing the play button.
+      success = await prepareAssetStorage();
+      if (success) await waitForStartClick();
+    }
 
     if (success) {
-      // Boot immediately. Audio unlocks on the player's first interaction.
-      setupAudioUnlockOnFirstInput();
-
-      // Assets are ready and the game is about to load: show the splash with
-      // its loading bar. On a first run the splash was suppressed so the upload
-      // screen led; now that the upload is done, bring it back for the load.
-      var splashEl = document.getElementById('splash');
-      if (splashEl) { splashEl.classList.add('visible', 'loading'); }
+      // Small delay to ensure all async operations are complete
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       // loadGame() is defined in inline script and handles openclaw.js injection
       if (typeof window.loadGame === 'function') {
-        if (window.bootLog) window.bootLog('loadGame() -> inject openclaw.js');
         window.loadGame();
       } else {
         console.error('[Game Init] loadGame() function not found');
